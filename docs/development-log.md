@@ -689,8 +689,8 @@ Checked in the browser at 1280 px and 375 px with Yapily sandbox data.
 
 ### Demo video
 
-A walkthrough video (`docs/media/onesum-demo.mp4`, 1 min 37 s, 1280×800) and a poster
-frame (`docs/media/onesum-overview.png`) are linked from the README. Recorded with
+A walkthrough video (`docs/media/ovra-demo.mp4`, 1 min 38 s, 1280×800; re-recorded after the
+rename to Ovra) and a poster frame (`docs/media/ovra-overview.png`) are linked from the README. Recorded with
 Playwright driving local Chrome against the Docker stack with `BANK_PROVIDER=mock`
 (a throwaway demo user with a random password), desktop then a 390 px phone viewport,
 joined with ffmpeg (H.264, `+faststart` so it streams). The first take showed no budget
@@ -716,5 +716,5 @@ into a single figure, many accounts becoming one overview.
   `finance_app` package keep the working name; history in this log is left as written.
 - One logo geometry (40-unit grid) shared by `LogoMark`, `public/favicon.svg` and
   `scripts/make_icons.py`, which now draws at 4x and downsamples for smooth PNG edges.
-- Still open: UK IPO and EUIPO trademark search and a domain. The demo videos still
-  show the Onesum name until they are re-recorded.
+- Still open: UK IPO and EUIPO trademark search and a domain. Both demo videos and the
+  README screenshot were re-recorded with the Ovra branding.
