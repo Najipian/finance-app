@@ -696,3 +696,7 @@ Playwright driving local Chrome against the Docker stack with `BANK_PROVIDER=moc
 joined with ffmpeg (H.264, `+faststart` so it streams). The first take showed no budget
 alert: recategorising one Tesco row with "apply to similar" moved all Tesco spending
 out of Groceries, so the script budgets Eating out instead.
+
+A second, phone-only take (`docs/media/onesum-demo-mobile.mp4`, 60 s) runs the full flow
+at 390×844 with touch input. Playwright pads rather than upscales when the video size
+exceeds the viewport, so the clip is cropped to the viewport and scaled 2× with ffmpeg.
