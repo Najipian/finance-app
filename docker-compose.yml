@@ -1,5 +1,5 @@
-# Local stack: API + worker + PostgreSQL 16 + Redis.
-#   cp .env.example .env   (then set POSTGRES_PASSWORD)
+# Local stack: migrations + API + worker + PostgreSQL 16 + Redis.
+#   cp .env.example .env   (then set POSTGRES_PASSWORD and JWT_SECRET)
 #   docker compose up --build
 # API: http://localhost:8000/docs
 
@@ -14,21 +14,35 @@ x-backend: &backend
     POSTGRES_HOST: postgres
     POSTGRES_PORT: "5432"
     REDIS_URL: redis://redis:6379/0
+
+x-after-migrations: &after-migrations
   depends_on:
-    postgres:
-      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
     redis:
       condition: service_healthy
-  restart: unless-stopped
 
 services:
-  api:
+  # One-shot: brings the schema up to date, then exits. api/worker wait for it.
+  migrate:
     <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: [*backend, *after-migrations]
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
 
   worker:
-    <<: *backend
+    <<: [*backend, *after-migrations]
+    restart: unless-stopped
     command: ["arq", "finance_app.worker.settings.WorkerSettings"]
     healthcheck:
       disable: true # the image's HTTP healthcheck is for the API only

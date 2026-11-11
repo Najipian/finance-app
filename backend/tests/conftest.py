@@ -11,6 +11,7 @@ from pydantic import SecretStr
 # Modules that call get_settings() at import time (the arq worker) need these.
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test-only")
+os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-0123456789abcdef")
 
 from finance_app.core.config import Environment, Settings
 from finance_app.main import create_app
@@ -22,6 +23,7 @@ def settings() -> Settings:
         _env_file=None,  # type: ignore[call-arg]
         environment=Environment.TEST,
         postgres_password=SecretStr("test-only"),
+        jwt_secret=SecretStr("test-only-jwt-secret-0123456789abcdef"),
     )
 
 

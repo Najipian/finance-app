@@ -29,6 +29,9 @@ RUN groupadd --system app && useradd --system --gid app --no-create-home app
 
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
+# Migrations ship in the image so `alembic upgrade head` runs before the API starts.
+COPY --chown=app:app alembic.ini ./
+COPY --chown=app:app alembic ./alembic
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

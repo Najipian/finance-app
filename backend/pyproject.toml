@@ -7,11 +7,14 @@ license = { text = "MIT" }
 authors = [{ name = "Amr Najip" }]
 dependencies = [
     "alembic>=1.20.1",
+    "argon2-cffi>=25.1.0",
     "arq>=0.28.0",
     "asyncpg>=0.32.0",
+    "email-validator>=2.3.0",
     "fastapi>=0.162.2",
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
+    "pyjwt>=2.15.1",
     "redis>=5.3.1",
     "sqlalchemy[asyncio]>=2.1.8",
     "structlog>=26.1.0",
@@ -66,7 +69,7 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 # Tests: asserts are the point; docstrings on every test add noise.
-"tests/**" = ["S101", "D"]
+"tests/**" = ["S101", "S105", "S106", "D"]
 "alembic/**" = ["D"]
 
 # ---------------------------------------------------------------- mypy
@@ -86,7 +89,10 @@ warn_required_dynamic_aliases = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Tests and async fixtures share one event loop, so DB connections opened in a
+# fixture are used and closed on the same loop.
 asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 addopts = "-ra --strict-markers --cov=finance_app --cov-report=term-missing --cov-fail-under=70"
 markers = [
   "integration: needs Docker (testcontainers: real Postgres/Redis)",

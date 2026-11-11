@@ -7,6 +7,7 @@ def test_database_url_uses_asyncpg_and_masks_password() -> None:
     settings = Settings(
         _env_file=None,  # type: ignore[call-arg]
         postgres_password=SecretStr("s3cret"),
+        jwt_secret=SecretStr("x" * 32),
         postgres_host="db",
     )
 
@@ -19,7 +20,11 @@ def test_database_url_uses_asyncpg_and_masks_password() -> None:
 
 
 def test_is_production_only_in_production() -> None:
-    base = {"_env_file": None, "postgres_password": SecretStr("x")}
+    base = {
+        "_env_file": None,
+        "postgres_password": SecretStr("x"),
+        "jwt_secret": SecretStr("x" * 32),
+    }
 
     assert Settings(**base, environment=Environment.PRODUCTION).is_production  # type: ignore[arg-type]
     assert not Settings(**base, environment=Environment.LOCAL).is_production  # type: ignore[arg-type]

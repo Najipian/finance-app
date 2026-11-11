@@ -170,7 +170,7 @@ Ten core tables; every user-owned row carries `user_id` (directly or through its
 | Table | Key fields | Notes |
 | --- | --- | --- |
 | users | id, email, password_hash, created_at | Email unique, stored lower-case |
-| refresh_tokens | id, user_id, token_hash, expires_at, revoked_at | Rotated on each refresh |
+| refresh_tokens | id, user_id, family_id, token_hash, expires_at, revoked_at | SHA-256 of an opaque token; rotated on each refresh; reuse of a revoked token revokes its family (one family per login) |
 | bank_connections | id, user_id, provider, institution_id, status, consent_token_enc, consent_expires_at, last_synced_at | Status: pending, active, needs_renewal, revoked |
 | accounts | id, connection_id, provider_account_id, name, type, currency, iban_masked | Unique (connection_id, provider_account_id) |
 | balances | id, account_id, type, amount, currency, as_of | Latest per type served to UI |

@@ -4,17 +4,46 @@ Services raise ``DomainError`` subclasses and never import FastAPI; this module 
 the single place that turns any error into an ``application/problem+json`` body.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
 log = structlog.get_logger(__name__)
+
+
+class ProblemDetails(BaseModel):
+    """RFC 9457 error body, used to document error responses in OpenAPI."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(default="about:blank", examples=["about:blank"])
+    title: str = Field(examples=["Unauthorized"])
+    status: int = Field(examples=[401])
+    instance: str = Field(examples=["/api/v1/auth/login"])
+    detail: str | None = Field(default=None, examples=["Incorrect email or password."])
+
+
+def problem(description: str) -> dict[str, Any]:
+    """OpenAPI ``responses`` entry for a problem-details error.
+
+    Args:
+        description: When this error happens, shown in ``/docs``.
+
+    Returns:
+        A dict for a route's ``responses={status: ...}`` mapping.
+    """
+    return {
+        "model": ProblemDetails,
+        "description": description,
+        "content": {PROBLEM_MEDIA_TYPE: {}},
+    }
 
 
 class DomainError(Exception):
@@ -26,10 +55,19 @@ class DomainError(Exception):
 
     status_code: int = 400
     title: str = "Bad request"
+    headers: ClassVar[dict[str, str]] = {}
 
     def __init__(self, detail: str | None = None) -> None:
         super().__init__(detail or self.title)
         self.detail = detail
+
+
+class UnauthorizedError(DomainError):
+    """Authentication is missing or invalid."""
+
+    status_code = 401
+    title = "Unauthorized"
+    headers: ClassVar[dict[str, str]] = {"WWW-Authenticate": "Bearer"}
 
 
 class NotFoundError(DomainError):
@@ -79,7 +117,9 @@ def problem_response(
 
 async def _domain_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, DomainError)  # noqa: S101 - narrowed by registration
-    return problem_response(request, exc.status_code, exc.title, exc.detail)
+    response = problem_response(request, exc.status_code, exc.title, exc.detail)
+    response.headers.update(exc.headers)
+    return response
 
 
 async def _http_error_handler(request: Request, exc: Exception) -> JSONResponse:
