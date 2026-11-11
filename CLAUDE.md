@@ -17,7 +17,7 @@ Read both before starting a milestone. If a change contradicts them, update the 
 
 ## Current status
 
-**Week 1 in progress.** Repo lives at `D:\finance-app`. Done: git, backend skeleton (uv, ruff/mypy/pytest config), settings, structlog, RFC 9457 error handling, DB base + async session factory, health endpoints (liveness + readiness), arq worker stub, Dockerfile + Compose, Alembic (async; `migrate` one-shot service in Compose), auth BR-01 (register, login, refresh rotation with reuse detection, logout, `GET /me`), pre-commit, GitHub Actions CI (lint, tests, pip-audit, Docker smoke test, GHCR publish on main), CodeQL, Dependabot, rate limiting on auth endpoints (async Redis fixed window, ADR 0002). Repo on GitHub: Najipian/finance-app. **Week 1 complete.** Next: Week 2.
+**Week 2 done (pending Yapily sandbox check).** Repo: `D:\finance-app`, GitHub `Najipian/finance-app`. Week 1: skeleton, Docker, Alembic, auth BR-01 + rate limiting (ADR 0002), CI/CD, CodeQL, Dependabot. Week 2: AES-256-GCM `TokenCipher` (moved up from Week 5), `BankProvider` protocol, mock provider + demo bank page, Yapily adapter (contract-tested with respx from the API reference, not yet run against the sandbox: needs credentials), consent flow with one-time token + single-use Redis state (ADR 0003), `sync_accounts` arq job, `GET /accounts` with per-currency totals (BR-02, BR-05). Next: Week 3.
 
 1. Week 1 — repo skeleton, `pyproject.toml` (uv), ruff/mypy/pytest config, pre-commit, Docker + Compose (api, Postgres, Redis), settings, DB session, Alembic, health endpoint, auth (BR-01), CI workflow, README.
 2. Week 2 — `BankProvider` protocol, mock provider, Yapily sandbox adapter, consent flow, accounts and balances (BR-02, BR-05).

@@ -2,7 +2,7 @@
 
 A personal finance app built on UK/EU Open Banking. Connect bank accounts through a secure consent flow, see every balance and transaction in one place, get spending auto-categorized, and stay on top of monthly budgets.
 
-> Status: Week 1 of 6 complete. Backend, Docker stack, migrations, auth (BR-01) with rate limiting, and CI/CD in place.
+> Status: Weeks 1–2 of 6 done. Auth (BR-01), bank connection by consent (BR-02) and accounts across banks (BR-05), with CI/CD.
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
@@ -21,7 +21,7 @@ Python 3.12 · FastAPI · SQLAlchemy 2.0 · PostgreSQL 16 · Redis + arq · Reac
 Prerequisites: Docker Desktop and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-cp .env.example .env          # then set POSTGRES_PASSWORD and JWT_SECRET
+cp .env.example .env          # then set POSTGRES_PASSWORD, JWT_SECRET and TOKEN_ENCRYPTION_KEY
 docker compose up --build
 ```
 
@@ -40,7 +40,21 @@ Compose runs `alembic upgrade head` (the `migrate` service) before the API and w
 | POST | /api/v1/auth/refresh | — | Rotate tokens (single-use refresh token) |
 | POST | /api/v1/auth/logout | — | Revoke the session |
 | GET | /api/v1/me | Bearer | Current user |
+| GET | /api/v1/institutions?country=GB | Bearer | Banks to connect |
+| POST | /api/v1/connections | Bearer | Start bank consent → `authorisation_url` (BR-02) |
+| GET | /api/v1/connections/callback | `state` | Bank redirect target; 303 to the web app |
+| GET | /api/v1/connections | Bearer | Connected banks and status |
+| GET | /api/v1/accounts | Bearer | All accounts, balances, totals per currency (BR-05) |
 | GET | /api/v1/health, /health/ready | — | Liveness / readiness |
+
+### Try the bank connection offline
+
+With `BANK_PROVIDER=mock` (the default), `POST /api/v1/connections` with
+`{"institution_id": "mock-bank-uk"}` returns an `authorisation_url` to a demo bank
+page. Open it in a browser and click **Approve**: you are redirected through the
+callback, the worker fetches accounts, and `GET /api/v1/accounts` shows them.
+Set `BANK_PROVIDER=yapily` with sandbox credentials from console.yapily.com to use
+real sandbox banks. See [ADR 0003](docs/adr/0003-bank-consent-flow.md) for the flow.
 
 ### Without Docker for the API (faster reloads)
 
@@ -84,6 +98,8 @@ GitHub Actions (`.github/workflows/ci.yml`) on every push and PR: ruff + mypy, f
 - Refresh tokens are opaque, stored as SHA-256, single-use, and rotated; replaying a used token revokes the whole session.
 - Login gives the same response and timing for an unknown email and a wrong password.
 - Rate limits on auth endpoints: 10/min per IP, and 5 login attempts per 15 min per account from any IP (429 + `Retry-After`). See [ADR 0002](docs/adr/0002-rate-limiting-on-async-redis.md).
+- Bank consent tokens are encrypted with AES-256-GCM (versioned keys, bound to their row) and never appear in URLs: the callback carries a one-time token exchanged server-side, and a single-use `state` stops CSRF and replay ([ADR 0003](docs/adr/0003-bank-consent-flow.md)).
+- Only the last 4 characters of account numbers are stored; bank I/O runs in the background worker.
 - No secrets in the repo: `.env` is git-ignored; `.env.example` holds placeholders.
 - The DB password is a `SecretStr` and is masked in logs and reprs.
 - Validation errors never echo submitted values; unexpected errors never leak internals.

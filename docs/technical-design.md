@@ -13,7 +13,7 @@ Key design choices:
 - **Provider adapter.** All Open Banking calls go through a `BankProvider` protocol; Yapily is the first real implementation, plus a mock provider for tests and offline demos.
 - **Async sync.** Bank data is pulled by queued jobs, never inside a user's HTTP request.
 - **Idempotent writes.** Every transaction has a natural key, so repeated syncs never duplicate data.
-- **Encrypt what matters.** Provider tokens and consent IDs are encrypted at the application layer.
+- **Encrypt what matters.** Provider consent tokens are encrypted at the application layer (ADR 0003).
 
 ## Architecture
 
@@ -171,9 +171,9 @@ Ten core tables; every user-owned row carries `user_id` (directly or through its
 | --- | --- | --- |
 | users | id, email, password_hash, created_at | Email unique, stored lower-case |
 | refresh_tokens | id, user_id, family_id, token_hash, expires_at, revoked_at | SHA-256 of an opaque token; rotated on each refresh; reuse of a revoked token revokes its family (one family per login) |
-| bank_connections | id, user_id, provider, institution_id, status, consent_token_enc, consent_expires_at, last_synced_at | Status: pending, active, needs_renewal, revoked |
-| accounts | id, connection_id, provider_account_id, name, type, currency, iban_masked | Unique (connection_id, provider_account_id) |
-| balances | id, account_id, type, amount, currency, as_of | Latest per type served to UI |
+| bank_connections | id, user_id, provider, institution_id, institution_name, status, consent_token_enc, provider_consent_id, consent_expires_at, last_synced_at | Status: pending, active, needs_renewal, revoked |
+| accounts | id, connection_id, provider_account_id, name, type, currency, account_number_masked | Unique (connection_id, provider_account_id); last 4 characters only |
+| balances | id, account_id, type, amount, currency, as_of | Unique (account_id, type), upserted each sync; headline = available, else booked |
 | transactions | id, account_id, provider_tx_id, booking_date, amount, currency, description, merchant, status, category_id, dedup_key, raw_json | Unique (account_id, dedup_key) |
 | categories | id, user_id (null = default), name, parent_id, icon | 12 defaults seeded |
 | category_rules | id, user_id, match_field, operator, value, category_id, priority | Evaluated in priority order |
@@ -203,7 +203,7 @@ sequenceDiagram
     A-->>U: 10. show accounts
 ```
 
-The token is encrypted before it is stored in step 8; the PWA polls `/connections` until the first sync finishes, then shows the accounts. Renewal repeats steps 1–7 for an existing connection.
+Step 3 uses `oneTimeToken: true`: the callback (step 6) carries a short-lived one-time token that the API exchanges server-side, so the consent token never appears in a URL (ADR 0003). The token is encrypted before it is stored in step 8; the PWA polls `/connections` until the first sync finishes, then shows the accounts. Renewal repeats steps 1–7 for an existing connection.
 
 ## API design
 
@@ -239,7 +239,7 @@ REST under `/api/v1`, JSON, JWT bearer auth on everything except auth and the ba
 | Bank tokens at rest | AES-256-GCM via `cryptography` in a `TokenCipher` service; random 12-byte nonce per value; key from AWS Secrets Manager/KMS (env var locally), never in the repo or DB; key version stored with ciphertext for rotation |
 | Passwords | Argon2id (argon2-cffi) |
 | Sessions | 15-minute access JWT; 7-day refresh token stored hashed, rotated on use, revoked on logout; reuse of a revoked token revokes the whole family |
-| Consent callback | `state` parameter tied to the user and expiring in 10 minutes, to stop CSRF and replay |
+| Consent callback | Random 256-bit `state` stored in Redis as state → (user, connection), 10-minute TTL, consumed with `GETDEL` (single use) to stop CSRF and replay; one-time-token exchange keeps the consent token out of URLs (ADR 0003) |
 | Data access | Every query scoped by `user_id` from the token; ownership enforced in services, 404 (not 403) for other users' resources |
 | Input | Pydantic validation on every request; SQLAlchemy parameters prevent SQL injection |
 | Transport | HTTPS only, HSTS, security headers middleware, strict CORS to the web origin |
