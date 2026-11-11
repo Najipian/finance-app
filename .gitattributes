@@ -1,0 +1,8 @@
+# Normalise line endings to LF in the repo and working tree.
+# The owner develops on Windows, but containers and CI run Linux:
+# CRLF breaks shell entrypoints and produces noisy diffs.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary

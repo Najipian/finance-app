@@ -1,0 +1,97 @@
+[project]
+name = "finance-app"
+version = "0.1.0"
+description = "Personal finance app on UK/EU Open Banking (read-only AIS)."
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Amr Najip" }]
+dependencies = [
+    "alembic>=1.20.1",
+    "arq>=0.28.0",
+    "asyncpg>=0.32.0",
+    "fastapi>=0.162.2",
+    "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.2",
+    "redis>=5.3.1",
+    "sqlalchemy[asyncio]>=2.1.8",
+    "structlog>=26.1.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.4.1",
+    "pre-commit>=4.7.0",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1.post1",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.4",
+    "testcontainers[postgres,redis]>=4.13.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.14"]
+build-backend = "uv_build"
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "B",        # bugbear
+  "UP",       # pyupgrade
+  "S",        # bandit (security)
+  "N",        # pep8-naming
+  "SIM",      # simplify
+  "RUF",      # ruff-specific
+  "ASYNC",    # blocking calls in async code
+  "BLE",      # blind except
+  "D",        # docstrings (Google style, enforced below)
+]
+ignore = [
+  "D105",  # magic methods need no docstring
+  "D107",  # __init__ documented on the class
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: asserts are the point; docstrings on every test add noise.
+"tests/**" = ["S101", "D"]
+"alembic/**" = ["D"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+packages = ["finance_app"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+addopts = "-ra --strict-markers --cov=finance_app --cov-report=term-missing --cov-fail-under=70"
+markers = [
+  "integration: needs Docker (testcontainers: real Postgres/Redis)",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["finance_app"]

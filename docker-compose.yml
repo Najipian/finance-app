@@ -1,0 +1,63 @@
+# Local stack: API + worker + PostgreSQL 16 + Redis.
+#   cp .env.example .env   (then set POSTGRES_PASSWORD)
+#   docker compose up --build
+# API: http://localhost:8000/docs
+
+name: finance-app
+
+x-backend: &backend
+  build: ./backend
+  image: finance-app-backend:local
+  env_file: .env
+  environment:
+    # Inside the Compose network, services reach each other by service name.
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    REDIS_URL: redis://redis:6379/0
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  worker:
+    <<: *backend
+    command: ["arq", "finance_app.worker.settings.WorkerSettings"]
+    healthcheck:
+      disable: true # the image's HTTP healthcheck is for the API only
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # for local tools and `uv run` outside Docker
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
