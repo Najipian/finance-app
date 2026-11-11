@@ -1,26 +1,39 @@
 """Render the PWA icons (192 and 512 px PNG) from the same design as favicon.svg.
 
-Run once from web/:  uv run --no-project --with pillow python scripts/make_icons.py
-The 512 px icon keeps its drawing inside the central 80 % so it also works as a
-maskable icon.
+Run from web/:  uv run --no-project --with pillow python scripts/make_icons.py
+The drawing keeps to the central 80 % so the 512 px icon also works as a maskable
+icon. Shapes are drawn at 4x and downsampled, which gives smooth anti-aliased edges.
 """
 
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-BRAND, WHITE, GOLD = (15, 93, 90), (255, 255, 255), (233, 196, 106)
-BARS = [(14, 34, 22, 50, WHITE), (28, 24, 36, 50, WHITE), (42, 14, 50, 50, GOLD)]  # 64-unit grid
+BRAND, WHITE, MINT = (15, 93, 90), (255, 255, 255), (159, 216, 209)
+SUPERSAMPLE = 4
+
+# Strokes on the 40-unit grid of favicon.svg: (points, width, colour).
+STROKES = [
+    ([(9.5, 16), (17.5, 16)], 2.6, MINT),
+    ([(9.5, 21), (17.5, 21)], 2.6, MINT),
+    ([(9.5, 26), (17.5, 26)], 2.6, MINT),
+    ([(20, 21), (23.5, 21)], 2.6, WHITE),
+    ([(26.5, 14), (30.5, 12), (30.5, 28)], 2.8, WHITE),
+]
 
 
 def render(size: int, out: Path) -> None:
-    image = Image.new("RGB", (size, size), BRAND)
+    big = size * SUPERSAMPLE
+    image = Image.new("RGB", (big, big), BRAND)
     draw = ImageDraw.Draw(image)
-    scale, inset = size * 0.8 / 64, size * 0.1  # safe zone for maskable icons
-    for x0, y0, x1, y1, colour in BARS:
-        box = [inset + x0 * scale, inset + y0 * scale, inset + x1 * scale, inset + y1 * scale]
-        draw.rounded_rectangle(box, radius=2 * scale, fill=colour)
-    image.save(out, optimize=True)
+    scale, inset = big * 0.8 / 40, big * 0.1  # safe zone for maskable icons
+    for points, width, colour in STROKES:
+        xy = [(inset + x * scale, inset + y * scale) for x, y in points]
+        w = width * scale
+        draw.line(xy, fill=colour, width=round(w), joint="curve")
+        for x, y in (xy[0], xy[-1]):  # round caps
+            draw.ellipse([x - w / 2, y - w / 2, x + w / 2, y + w / 2], fill=colour)
+    image.resize((size, size), Image.Resampling.LANCZOS).save(out, optimize=True)
 
 
 if __name__ == "__main__":

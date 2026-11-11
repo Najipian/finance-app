@@ -57,7 +57,7 @@ async def authorize(
 <body><div class="card">
   <span class="demo">Demo bank: no real data</span>
   <h1>{escape(bank.name)}</h1>
-  <p><strong>Onesum</strong> is asking to read your accounts, balances and transactions
+  <p><strong>Ovra</strong> is asking to read your accounts, balances and transactions
      for 90 days. It cannot move money.</p>
   <a class="approve" href="{escape(approve)}">Approve</a>
   <a class="cancel" href="{escape(cancel)}">Cancel</a>

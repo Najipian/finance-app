@@ -700,3 +700,21 @@ out of Groceries, so the script budgets Eating out instead.
 A second, phone-only take (`docs/media/onesum-demo-mobile.mp4`, 60 s) runs the full flow
 at 390×844 with touch input. Playwright pads rather than upscales when the video size
 exceeds the viewport, so the clip is cropped to the viewport and scaled 2× with ffmpeg.
+
+## Renamed: Onesum → Ovra
+
+Three rounds of name proposals (Weft, Sumday, Plumb, Hearth, Tilly; Cairn, Kestrel,
+Tessera, Harbour, Keel, Prismo; Ovra, Brass, Quidly, Totl, Clearline, Sumora). The owner
+chose **Ovra**, from "overview" and "overall": four letters, the same in every target
+market, and as an invented word more likely to be free as a trademark and domain than
+a dictionary word. It keeps the mark proposed for Onesum: three account lines lead
+into a single figure, many accounts becoming one overview.
+
+- Product name updated in the web app (header, footer, sign-in, page title, PWA
+  manifest), the API title and mock bank page, `docs/openapi.json` and the generated
+  types, README, BRD, technical design and CLAUDE.md. The repo, folders and the
+  `finance_app` package keep the working name; history in this log is left as written.
+- One logo geometry (40-unit grid) shared by `LogoMark`, `public/favicon.svg` and
+  `scripts/make_icons.py`, which now draws at 4x and downsamples for smooth PNG edges.
+- Still open: UK IPO and EUIPO trademark search and a domain. The demo videos still
+  show the Onesum name until they are re-recorded.

@@ -1,14 +1,14 @@
-# Onesum — Business Requirements (BRD)
+# Ovra — Business Requirements (BRD)
 
 Version 0.1 draft · Owner: Amr Najip · 2026-11-08
 
 ## Document control
 
-This BRD defines what the MVP of Onesum must do, for whom, and how success is judged. The technical design lives in `technical-design.md`.
+This BRD defines what the MVP of Ovra must do, for whom, and how success is judged. The technical design lives in `technical-design.md`.
 
 | Field | Value |
 | --- | --- |
-| Product | Onesum (named 2026-11-11; "Finance App" was the working name) |
+| Product | Ovra (2026-11-11; earlier names: "Finance App" working name, then Onesum) |
 | Version | 0.1 draft |
 | Owner | Amr Najip |
 | Type | Portfolio project, open source on GitHub |
@@ -17,7 +17,7 @@ This BRD defines what the MVP of Onesum must do, for whom, and how success is ju
 
 ## Executive summary and objectives
 
-Onesum lets a user connect several bank accounts through Open Banking, see all balances and transactions in one place, and track spending against monthly budgets. Its business purpose is to prove production-grade fintech skills to employers in the UK, Europe, Australia and New Zealand.
+Ovra lets a user connect several bank accounts through Open Banking, see all balances and transactions in one place, and track spending against monthly budgets. Its business purpose is to prove production-grade fintech skills to employers in the UK, Europe, Australia and New Zealand.
 
 | ID | Objective | Measure of success |
 | --- | --- | --- |

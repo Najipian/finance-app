@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project
 
-Onesum (product name; the repo, folder and `finance_app` package keep the original working name): a personal finance app built on UK/EU Open Banking (read-only AIS). Users connect bank accounts through a consent flow, see balances and transactions in one place, get transactions auto-categorized, and track monthly budgets.
+Ovra (product name, renamed from Onesum on 2026-11-11; the repo, folder and `finance_app` package keep the original working name): a personal finance app built on UK/EU Open Banking (read-only AIS). Users connect bank accounts through a consent flow, see balances and transactions in one place, get transactions auto-categorized, and track monthly budgets.
 
 It is a **portfolio project** for the owner (Amr Najip, integration engineer in banking) to show production-grade fintech engineering to employers in the UK, Europe, Australia and New Zealand. Code quality, tests, security and documentation matter as much as features: reviewers will read this code.
 

@@ -2,6 +2,7 @@ import { type FormEvent, useState } from "react";
 import { Link, Navigate } from "react-router";
 
 import { useAuth } from "../auth/context";
+import { LogoMark } from "../components/icons";
 import { ErrorMessage } from "../components/ui";
 
 export function AuthPage({ mode }: { mode: "login" | "register" }) {
@@ -31,7 +32,10 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
   return (
     <main className="flex min-h-dvh items-center justify-center px-4">
       <div className="card w-full max-w-sm">
-        <p className="text-sm font-semibold text-brand-700">Onesum</p>
+        <p className="mb-3 flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+          <LogoMark />
+          Ovra
+        </p>
         <h1 className="mb-4 text-2xl font-bold">{isLogin ? "Sign in" : "Create your account"}</h1>
         <form onSubmit={(e) => void submit(e)} className="space-y-4" noValidate={false}>
           <div>

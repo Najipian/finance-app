@@ -16,9 +16,9 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "Onesum",
-        short_name: "Onesum",
-        description: "All your bank accounts, spending and budgets in one place.",
+        name: "Ovra",
+        short_name: "Ovra",
+        description: "Every bank account, your spending and budgets in one overview.",
         theme_color: "#0f5d5a",
         background_color: "#f6f7f9",
         display: "standalone",

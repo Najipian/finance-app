@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0f5d5a"/>
-  <rect x="14" y="34" width="8" height="16" rx="2" fill="#ffffff"/>
-  <rect x="28" y="24" width="8" height="26" rx="2" fill="#ffffff"/>
-  <rect x="42" y="14" width="8" height="36" rx="2" fill="#e9c46a"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <!-- Ovra: three account lines lead into one figure. Keep in sync with LogoMark and scripts/make_icons.py. -->
+  <rect width="40" height="40" rx="11" fill="#0f5d5a"/>
+  <path d="M9.5 16h8M9.5 21h8M9.5 26h8" stroke="#9fd8d1" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M20 21h3.5" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M26.5 14l4-2v16" fill="none" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

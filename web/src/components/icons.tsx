@@ -46,12 +46,17 @@ export function Icon({ name, className = "size-5", ...props }: { name: IconName 
   );
 }
 
-/** The Onesum logo mark: a rounded tile with a "1" (one sum of all accounts). */
+/**
+ * The Ovra logo mark: three account lines lead into a single figure, many accounts
+ * becoming one overview. Same geometry as public/favicon.svg and the PWA icons.
+ */
 export function LogoMark({ className = "size-7" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 28 28" aria-hidden="true" focusable="false" className={className}>
-      <rect width="28" height="28" rx="8" className="fill-brand-700" />
-      <path d="M11 9.5 15 7.5V20.5M11.5 20.5h7" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg viewBox="0 0 40 40" aria-hidden="true" focusable="false" className={className}>
+      <rect width="40" height="40" rx="11" className="fill-brand-700" />
+      <path d="M9.5 16h8M9.5 21h8M9.5 26h8" stroke="#9fd8d1" strokeWidth="2.6" strokeLinecap="round" />
+      <path d="M20 21h3.5" stroke="white" strokeWidth="2.6" strokeLinecap="round" />
+      <path d="M26.5 14l4-2v16" fill="none" stroke="white" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

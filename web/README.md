@@ -1,4 +1,4 @@
-# Onesum — web (React PWA)
+# Ovra — web (React PWA)
 
 React 19 + Vite + TypeScript (strict), Tailwind CSS v4, TanStack Query, Chart.js,
 installable as a PWA. See the [root README](../README.md) and

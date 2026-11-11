@@ -50,7 +50,7 @@ function Header() {
         <div className="flex h-full items-center gap-8">
           <Link to="/" className="flex items-center gap-2 rounded-md text-[15px] font-semibold tracking-tight">
             <LogoMark />
-            Onesum
+            Ovra
           </Link>
           <nav aria-label="Main" className="hidden h-full md:block">
             <ul className="flex h-full gap-6">
@@ -227,10 +227,10 @@ function Footer() {
           <div className="col-span-2 md:col-span-1">
             <p className="flex items-center gap-2 font-semibold tracking-tight">
               <LogoMark className="size-6" />
-              Onesum
+              Ovra
             </p>
             <p className="mt-3 max-w-xs text-sm text-muted">
-              All your accounts in one sum. Read-only Open Banking: Onesum can see your balances and transactions, never move
+              Every account, one overview. Read-only Open Banking: Ovra can see your balances and transactions, never move
               your money.
             </p>
           </div>
@@ -265,7 +265,7 @@ function Footer() {
           ))}
         </div>
         <div className="mt-8 flex flex-col gap-2 border-t border-black/8 pt-5 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
-          <p>© {YEAR} Onesum · Portfolio project, sandbox data only</p>
+          <p>© {YEAR} Ovra · Portfolio project, sandbox data only</p>
           <p className="flex items-center gap-1.5">
             <Icon name="shield" className="size-4" />
             Read-only access (AIS) · v{__APP_VERSION__}
