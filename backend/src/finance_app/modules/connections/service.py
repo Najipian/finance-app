@@ -202,7 +202,13 @@ class ConnectionService:
                 details={"outcome": outcome.value, "renewal": binding.renew},
             )
             await self._session.commit()
-            log.info("consent_not_granted", connection_id=str(connection.id), outcome=outcome)
+            log.info(
+                "consent_not_granted",
+                connection_id=str(connection.id),
+                outcome=outcome,
+                # Our own message (field names at most), never provider payloads.
+                reason=None if isinstance(exc, ConsentRejectedError) else str(exc),
+            )
             return CallbackResult(outcome, connection.id)
 
         superseded_consent_id = connection.provider_consent_id if binding.renew else None

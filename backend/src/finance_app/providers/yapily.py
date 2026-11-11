@@ -12,7 +12,7 @@ through float). Errors never include response bodies, which hold personal data.
 
 import json
 from collections.abc import Mapping
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 from urllib.parse import quote
@@ -44,6 +44,8 @@ ONE_TIME_TOKEN_PARAM = "one-time-token"  # noqa: S105 - a query parameter name
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 _MASKABLE_IDENTIFIERS = ("IBAN", "ACCOUNT_NUMBER", "BBAN")
 TRANSACTIONS_PAGE_SIZE = 1000  # Yapily maximum
+CLOCK_SKEW_MARGIN = timedelta(minutes=2)
+TRANSACTION_WINDOW_DAYS = 31
 
 
 class _RetryableError(ProviderError):
@@ -52,6 +54,11 @@ class _RetryableError(ProviderError):
 
 def _is_retryable(exc: BaseException) -> bool:
     return isinstance(exc, _RetryableError)
+
+
+def _fields(document: dict[str, Any]) -> str:
+    """Field names of a response, for error messages. Never values: they hold personal data."""
+    return ", ".join(sorted(str(k) for k in document)) or "none"
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -110,8 +117,13 @@ class YapilyProvider:
         consent: str | None = None,
         body: dict[str, Any] | None = None,
         params: dict[str, str | int] | None = None,
+        wrapped: bool = True,
     ) -> dict[str, Any]:
-        """Send one request and return the whole response document (``data``, ``meta``)."""
+        """Send one request and return the whole response document.
+
+        ``wrapped`` requires Yapily's usual ``{"meta", "data"}`` envelope. Errors name
+        the fields that were present (keys only, never values).
+        """
         headers = {"consent": consent} if consent else None
         try:
             response = await self._client.request(
@@ -130,8 +142,12 @@ class YapilyProvider:
             document = json.loads(response.content, parse_float=Decimal)
         except ValueError as exc:
             raise ProviderError(f"yapily {method} {path}: unexpected response") from exc
-        if not isinstance(document, dict) or "data" not in document:
-            raise ProviderError(f"yapily {method} {path}: unexpected response")
+        if not isinstance(document, dict):
+            raise ProviderError(f"yapily {method} {path}: response is not a JSON object")
+        if wrapped and "data" not in document:
+            raise ProviderError(
+                f"yapily {method} {path}: no 'data' in response (fields: {_fields(document)})"
+            )
         return document
 
     async def _with_retries(
@@ -212,13 +228,28 @@ class YapilyProvider:
         one_time_token = callback_params.get(ONE_TIME_TOKEN_PARAM)
         if not one_time_token:
             raise ProviderError("callback has no one-time token")
-        data = await self._post("/consent-one-time-token", {"oneTimeToken": one_time_token})
+        try:
+            document = await self._send(
+                "POST",
+                "/consent-one-time-token",
+                body={"oneTimeToken": one_time_token},
+                wrapped=False,
+            )
+        except _RetryableError as exc:
+            raise ProviderError(str(exc)) from exc
+        # Seen in the sandbox: this endpoint may answer with the Consent object itself
+        # rather than inside the usual "data" envelope, so accept both shapes.
+        data = document.get("data", document)
+        if not isinstance(data, dict):
+            raise ProviderError("yapily consent exchange: 'data' is not an object")
         status = data.get("status")
         if status in ("REJECTED", "FAILED", "REVOKED", "EXPIRED"):
             raise ConsentRejectedError(str(status).lower())
         token = data.get("consentToken")
         if not token:
-            raise ProviderError("consent has no token")
+            raise ProviderError(
+                f"yapily consent exchange: no consentToken (fields: {_fields(data)})"
+            )
         return ConsentResult(
             consent_token=SecretStr(token),
             consent_id=data.get("id"),
@@ -279,11 +310,30 @@ class YapilyProvider:
     async def get_transactions(
         self, consent_token: str, account_id: str, date_from: date, date_to: date
     ) -> list[ProviderTransaction]:
-        """Transactions booked or pending between two dates (inclusive), all pages."""
+        """Transactions booked or pending between two dates (inclusive), all pages.
+
+        Fetched in windows of ``TRANSACTION_WINDOW_DAYS``: with Modelo Sandbox one
+        30-day window answered in 1.4-3.1 s, a 365-day request took 24-28 s per page
+        and timed out. Each window is still paged with ``limit`` / ``offset``.
+        """
+        transactions: list[ProviderTransaction] = []
+        start = date_from
+        while start <= date_to:
+            end = min(start + timedelta(days=TRANSACTION_WINDOW_DAYS - 1), date_to)
+            transactions.extend(
+                await self._transactions_window(consent_token, account_id, start, end)
+            )
+            start = end + timedelta(days=1)
+        return transactions
+
+    async def _transactions_window(
+        self, consent_token: str, account_id: str, date_from: date, date_to: date
+    ) -> list[ProviderTransaction]:
+        """One window of transactions, all of its pages."""
         path = f"/accounts/{quote(account_id, safe='')}/transactions"
         params: dict[str, str | int] = {
             "from": _yapily_datetime(datetime.combine(date_from, time.min, UTC)),
-            "before": _yapily_datetime(datetime.combine(date_to, time.max, UTC)),
+            "before": _yapily_datetime(_transactions_before(date_to)),
             "limit": TRANSACTIONS_PAGE_SIZE,
             "sort": "date",
         }
@@ -309,6 +359,17 @@ class YapilyProvider:
         document = await self._with_retries("DELETE", f"/consents/{quote(consent_id, safe='')}")
         if document["data"].get("deleteStatus") not in (None, "SUCCESS"):
             raise ProviderError("yapily consent deletion failed")
+
+
+def _transactions_before(date_to: date, now: datetime | None = None) -> datetime:
+    """End of ``date_to``, but never later than now minus a safety margin.
+
+    Yapily rejects a ``before`` in the future ("The before date cannot be in the
+    future", seen with Modelo Sandbox), and our clock can run a few seconds ahead of
+    theirs. The next sync's overlap window picks up anything in the margin.
+    """
+    latest = (now or datetime.now(UTC)) - CLOCK_SKEW_MARGIN
+    return min(datetime.combine(date_to, time.max, UTC), latest)
 
 
 def _yapily_datetime(value: datetime) -> str:

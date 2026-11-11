@@ -5,7 +5,7 @@ Payloads follow the shapes in Yapily's API reference (docs.yapily.com).
 
 import json
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -235,7 +235,7 @@ async def test_client_errors_and_bad_payloads_are_provider_errors(yapily: Yapily
         await yapily.list_institutions("GB")
 
     respx.get(f"{BASE}/accounts").respond(200, json={"unexpected": True})
-    with pytest.raises(ProviderError, match="unexpected response"):
+    with pytest.raises(ProviderError, match=r"no 'data' in response \(fields: unexpected\)"):
         await yapily.get_accounts("t")
 
 
@@ -293,7 +293,7 @@ async def test_transactions_are_paged_and_mapped_br06(
         side_effect=[_page([_BOOKED, _PENDING], total=3), _page([_CREDIT], total=3)]
     )
 
-    txs = await yapily.get_transactions("consent", "acc-1", date(2026, 11, 1), date(2026, 11, 11))
+    txs = await yapily.get_transactions("consent", "acc-1", date(2026, 10, 1), date(2026, 10, 31))
 
     assert [
         (t.provider_transaction_id, t.amount, t.status, t.description, t.merchant) for t in txs
@@ -304,8 +304,8 @@ async def test_transactions_are_paged_and_mapped_br06(
     ]
     assert txs[1].booking_date == date(2026, 11, 11)
     first, second = (call.request.url.params for call in route.calls)
-    assert first["from"] == "2026-11-01T00:00:00.000Z"
-    assert first["before"] == "2026-11-11T23:59:59.999Z"
+    assert first["from"] == "2026-10-01T00:00:00.000Z"
+    assert first["before"] == "2026-10-31T23:59:59.999Z"  # a past day: end of day
     assert (first["offset"], second["offset"]) == ("0", "2")
     assert route.calls.last.request.headers["consent"] == "consent"
 
@@ -350,3 +350,73 @@ async def test_failed_revocation_is_an_error(yapily: YapilyProvider) -> None:
 
     with pytest.raises(ProviderError):
         await yapily.revoke_consent("c")
+
+
+# ---------------------------------------------------------------- shapes seen in the sandbox
+
+
+@respx.mock
+async def test_consent_exchange_accepts_a_bare_consent_object(yapily: YapilyProvider) -> None:
+    """Modelo Sandbox answered the exchange with 200 and the Consent itself, no envelope."""
+    respx.post(f"{BASE}/consent-one-time-token").respond(
+        200,
+        json={
+            "id": "consent-9",
+            "institutionId": "modelo-sandbox",
+            "status": "AUTHORIZED",
+            "consentToken": "sandbox-consent-token",
+            "expiresAt": "2027-02-09T16:35:02.412Z",
+        },
+    )
+
+    consent = await yapily.complete_consent({"one-time-token": "ott"})
+
+    assert consent.consent_token.get_secret_value() == "sandbox-consent-token"
+    assert consent.consent_id == "consent-9"
+
+
+@respx.mock
+async def test_missing_consent_token_names_fields_but_never_values(yapily: YapilyProvider) -> None:
+    respx.post(f"{BASE}/consent-one-time-token").respond(
+        200, json={"data": {"id": "c", "status": "AUTHORIZED", "secretThing": "do-not-log-me"}}
+    )
+
+    with pytest.raises(ProviderError) as exc_info:
+        await yapily.complete_consent({"one-time-token": "ott"})
+
+    message = str(exc_info.value)
+    assert "fields: id, secretThing, status" in message
+    assert "do-not-log-me" not in message
+
+
+def test_before_is_never_in_the_future_even_with_clock_skew() -> None:
+    """Modelo Sandbox rejected 'before' = end of today, and even our 'now' (clock skew)."""
+    from finance_app.providers.yapily import _transactions_before
+
+    now = datetime(2026, 11, 11, 16, 54, 45, tzinfo=UTC)
+
+    today = _transactions_before(date(2026, 11, 11), now)
+    past = _transactions_before(date(2026, 11, 10), now)
+
+    assert today == now - timedelta(minutes=2)
+    assert past == datetime(2026, 11, 10, 23, 59, 59, 999999, tzinfo=UTC)
+
+
+@respx.mock
+async def test_long_ranges_are_fetched_in_monthly_windows(yapily: YapilyProvider) -> None:
+    """A year in one request timed out against Modelo Sandbox; windows of 31 days don't."""
+    route = respx.get(f"{BASE}/accounts/acc-1/transactions").mock(
+        return_value=_json('{"data": []}')
+    )
+
+    await yapily.get_transactions("c", "acc-1", date(2026, 1, 1), date(2026, 3, 10))
+
+    windows = [
+        (c.request.url.params["from"][:10], c.request.url.params["before"][:10])
+        for c in route.calls
+    ]
+    assert windows == [
+        ("2026-01-01", "2026-01-31"),
+        ("2026-02-01", "2026-03-03"),
+        ("2026-03-04", "2026-03-10"),
+    ]
