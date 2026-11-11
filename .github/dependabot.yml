@@ -17,3 +17,9 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    ignore:
+      # The project targets Python 3.12 (pyproject, ruff, mypy). Moving to a new
+      # Python version is a deliberate change, not an automatic bump; patch
+      # updates of the 3.12 image still come through.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
