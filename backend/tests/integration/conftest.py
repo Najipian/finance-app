@@ -14,12 +14,19 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from arq.connections import RedisSettings
+from arq.worker import Worker
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from finance_app.core.config import Environment, Settings
+from finance_app.db.session import create_engine, create_sessionmaker
 from finance_app.main import create_app
+from finance_app.worker.settings import shutdown as worker_shutdown
+from finance_app.worker.settings import startup as worker_startup
+from finance_app.worker.settings import sync_accounts
 
 # On Windows with Docker Desktop, testcontainers can read the Ryuk reaper's port
 # mapping before Docker publishes it ("Port mapping ... 8080 is not available").
@@ -88,3 +95,32 @@ async def api(migrated_settings: Settings) -> AsyncIterator[AsyncClient]:
     """HTTP client for an app running against the containers with default settings."""
     async with running_app(migrated_settings) as client:
         yield client
+
+
+@pytest.fixture
+async def db(migrated_settings: Settings) -> AsyncIterator[AsyncSession]:
+    """A separate DB session for asserting on stored rows."""
+    engine = create_engine(migrated_settings)
+    async with create_sessionmaker(engine)() as session:
+        yield session
+    await engine.dispose()
+
+
+async def run_worker_burst(settings: Settings) -> None:
+    """Run a real arq worker until the queue is empty, then stop."""
+    worker = Worker(
+        functions=[sync_accounts],
+        redis_settings=RedisSettings.from_dsn(settings.redis_url),
+        burst=True,
+        on_startup=worker_startup,
+        on_shutdown=worker_shutdown,
+        ctx={"settings": settings},
+        poll_delay=0.05,
+        # arq's close() sends SIGUSR1 to itself when handle_signals=False, and Windows
+        # has no SIGUSR1. With handlers enabled, arq skips them on Windows itself.
+        handle_signals=sys.platform == "win32",
+    )
+    try:
+        await worker.main()
+    finally:
+        await worker.close()

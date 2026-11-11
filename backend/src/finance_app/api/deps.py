@@ -9,9 +9,15 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance_app.core.config import Settings
+from finance_app.core.crypto import TokenCipher
+from finance_app.core.jobs import JobQueue
 from finance_app.core.rate_limit import RateLimit, RateLimiter
+from finance_app.modules.accounts.service import AccountService
 from finance_app.modules.auth.service import AuthService, InvalidTokenError
+from finance_app.modules.connections.service import ConnectionService
+from finance_app.modules.connections.state import ConsentStateStore
 from finance_app.modules.users.models import User
+from finance_app.providers.base import BankProvider
 
 # auto_error=False so a missing header becomes our own RFC 9457 401, not FastAPI's 403.
 _bearer = HTTPBearer(auto_error=False, description="Access token from POST /auth/login.")
@@ -124,3 +130,29 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def get_connection_service(
+    request: Request, db: DbSession, settings: AppSettings
+) -> ConnectionService:
+    """Build the connection service with the app-wide provider, cipher and queues."""
+    state = request.app.state
+    return ConnectionService(
+        session=db,
+        provider=cast(BankProvider, state.provider),
+        cipher=cast(TokenCipher, state.cipher),
+        states=cast(ConsentStateStore, state.consent_states),
+        jobs=cast(JobQueue, state.job_queue),
+        settings=settings,
+    )
+
+
+ConnectionServiceDep = Annotated[ConnectionService, Depends(get_connection_service)]
+
+
+def get_account_service(db: DbSession) -> AccountService:
+    """Build the account service for this request."""
+    return AccountService(db)
+
+
+AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]

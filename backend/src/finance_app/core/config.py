@@ -8,9 +8,11 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
+
+from finance_app.core.crypto import decode_key
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 MIN_JWT_SECRET_LENGTH = 32
@@ -68,6 +70,30 @@ class Settings(BaseSettings):
     )
     login_account_window_seconds: int = Field(default=900, gt=0)
 
+    # Encryption of bank secrets at rest (NFR-01). Base64 of 32 random bytes.
+    token_encryption_key: SecretStr = Field(description="Required; AES-256-GCM key.")
+    token_encryption_key_version: int = Field(default=1, gt=0)
+    token_encryption_retired_keys: dict[int, SecretStr] = Field(
+        default_factory=dict,
+        description='Older keys still accepted for decryption, e.g. {"1": "<base64>"}.',
+    )
+
+    # Open Banking provider (BR-02). "mock" works offline with a demo bank page.
+    bank_provider: Literal["mock", "yapily"] = Field(default="mock")
+    yapily_base_url: str = Field(default="https://api.yapily.com")
+    yapily_application_uuid: str | None = Field(default=None)
+    yapily_application_secret: SecretStr | None = Field(default=None)
+    provider_timeout_seconds: float = Field(default=15.0, gt=0)
+
+    # Public URLs used in redirects during the bank consent flow.
+    public_api_url: str = Field(
+        default="http://localhost:8000", description="Where browsers reach this API."
+    )
+    web_app_url: str = Field(
+        default="http://localhost:5173", description="Where the user lands after consent."
+    )
+    consent_state_ttl_seconds: int = Field(default=600, gt=0)
+
     cors_origins: list[str] = Field(
         default_factory=list,
         description='Allowed web origins as a JSON list, e.g. ["http://localhost:5173"].',
@@ -81,6 +107,38 @@ class Settings(BaseSettings):
             msg = f"JWT_SECRET must be at least {MIN_JWT_SECRET_LENGTH} characters"
             raise ValueError(msg)
         return value
+
+    @field_validator("token_encryption_key")
+    @classmethod
+    def _encryption_key_is_256_bits(cls, value: SecretStr) -> SecretStr:
+        """Fail at startup, not at first use, if the key is malformed."""
+        try:
+            decode_key(value.get_secret_value())
+        except ValueError as exc:
+            msg = f"TOKEN_ENCRYPTION_KEY: {exc}"
+            raise ValueError(msg) from exc
+        return value
+
+    @model_validator(mode="after")
+    def _yapily_needs_credentials(self) -> "Settings":
+        """Refuse to start with the Yapily provider but no credentials."""
+        if self.bank_provider == "yapily" and not (
+            self.yapily_application_uuid and self.yapily_application_secret
+        ):
+            msg = "BANK_PROVIDER=yapily needs YAPILY_APPLICATION_UUID and _SECRET"
+            raise ValueError(msg)
+        return self
+
+    def encryption_keys(self) -> dict[int, bytes]:
+        """All usable encryption keys by version (current plus retired)."""
+        keys = {
+            v: decode_key(k.get_secret_value())
+            for v, k in self.token_encryption_retired_keys.items()
+        }
+        keys[self.token_encryption_key_version] = decode_key(
+            self.token_encryption_key.get_secret_value()
+        )
+        return keys
 
     @property
     def access_token_ttl(self) -> timedelta:

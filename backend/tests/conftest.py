@@ -12,6 +12,8 @@ from pydantic import SecretStr
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test-only")
 os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-0123456789abcdef")
+# 32 zero bytes, base64: a fixed, obviously-fake key for tests only.
+os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 
 from finance_app.core.config import Environment, Settings
 from finance_app.main import create_app
