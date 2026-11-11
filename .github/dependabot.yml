@@ -7,6 +7,11 @@ updates:
     groups:
       python-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # arq (job queue) requires redis<6, so a redis 6 bump has no valid solution
+      # and fails the whole update job. Remove once arq supports redis 6.
+      - dependency-name: redis
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
