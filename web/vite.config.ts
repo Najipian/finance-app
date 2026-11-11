@@ -13,8 +13,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "Finance App",
-        short_name: "Finance",
+        name: "Onesum",
+        short_name: "Onesum",
         description: "All your bank accounts, spending and budgets in one place.",
         theme_color: "#0f5d5a",
         background_color: "#f6f7f9",

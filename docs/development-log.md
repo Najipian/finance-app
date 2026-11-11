@@ -1,6 +1,6 @@
 # Development log
 
-A step-by-step record of how the Finance App was built: what was done, why, the
+A step-by-step record of how Onesum was built: what was done, why, the
 decisions taken, and the problems found along the way and how they were fixed.
 Requirements are referenced by ID (`BR-xx`, `NFR-xx`) from [BRD.md](BRD.md); the
 architecture is in [technical-design.md](technical-design.md); significant
@@ -611,3 +611,22 @@ Four PRs after `web/` joined Dependabot:
 
 Dependabot closed #12 and #13 itself after reading the ignore rules. CI green on
 every job.
+
+---
+
+## Naming
+
+### Product name: Onesum
+
+Chosen 2026-11-11 from a shortlist (Clearsum, Onesum, Tallyo, Pocketview, Moneyline):
+it says "one view of all your money" (BR-05) and reads naturally in UK, EU, Australian
+and New Zealand English. A web search found no finance app of that name; the nearest
+are Onespend (an iOS expense tracker) and OneNumber (a net-worth app). A formal check
+of the UK IPO trademark register and a domain are still to do.
+
+Renamed everywhere users and reviewers see it: page title, PWA manifest name, header
+and sign-in page, the mock bank's consent text, the API title in `/docs` and
+`docs/openapi.json`, README, BRD, technical design and CLAUDE.md. **Not** renamed: the
+`finance-app` repository and folder, the `finance_app` Python package and the npm
+package name. Renaming those is a large, risky diff with no visible benefit (GitHub
+keeps the repository URL either way).

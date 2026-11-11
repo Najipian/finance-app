@@ -1552,7 +1552,7 @@
   },
   "info": {
     "description": "Personal finance on UK/EU Open Banking (read-only AIS).",
-    "title": "Finance App",
+    "title": "Onesum",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",

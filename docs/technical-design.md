@@ -1,10 +1,10 @@
-# Finance App — Technical Design
+# Onesum — Technical Design
 
 Version 0.2 (Python backend) · Owner: Amr Najip · 2026-11-08
 
 ## Overview
 
-The Finance App is a Python 3.12 + FastAPI modular monolith with a React PWA, PostgreSQL, and Redis-backed background jobs, deployed on AWS. It implements the requirements in `BRD.md` (BR-01 to BR-12).
+Onesum is a Python 3.12 + FastAPI modular monolith with a React PWA, PostgreSQL, and Redis-backed background jobs, deployed on AWS. It implements the requirements in `BRD.md` (BR-01 to BR-12).
 
 Key design choices:
 
@@ -301,7 +301,7 @@ All bank I/O runs in arq workers, so a slow bank never blocks the UI.
 
 **Open questions**
 
-- [ ] Product name and domain for the demo
+- [x] Product name: **Onesum** (2026-11-11). Domain for the demo still to choose
 - [ ] React or Vue for the PWA (React assumed here)
 - [ ] Start on one EC2 or go straight to ECS Fargate?
 - [ ] Which Yapily sandbox banks to feature in the demo

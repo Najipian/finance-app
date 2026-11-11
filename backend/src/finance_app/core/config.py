@@ -39,7 +39,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = Field(default="Finance App", description="Name shown in OpenAPI docs.")
+    app_name: str = Field(default="Onesum", description="Name shown in OpenAPI docs.")
     environment: Environment = Field(default=Environment.LOCAL)
     log_level: LogLevel = Field(default="INFO")
 

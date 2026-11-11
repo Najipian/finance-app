@@ -21,7 +21,7 @@ export function Layout() {
       </a>
       <header className="bg-brand-700 text-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <span className="text-lg font-bold tracking-tight">Finance App</span>
+          <span className="text-lg font-bold tracking-tight">Onesum</span>
           <div className="flex items-center gap-3">
             {unread && unread.length > 0 && (
               <NavLink to="/" className="rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold">

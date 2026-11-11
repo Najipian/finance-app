@@ -1,5 +1,5 @@
 /**
- * Minimal typed HTTP client for the Finance App API.
+ * Minimal typed HTTP client for Onesum API.
  *
  * - The access token lives only in memory; the refresh token in sessionStorage
  *   (cleared when the tab closes). See docs/development-log.md for the trade-off.
