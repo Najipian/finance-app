@@ -475,3 +475,110 @@ tie-break in the engine: among otherwise equal rules the longer, more specific v
 wins, then the ID. Regression checks: Netflix → Subscriptions and Shell → Fuel in the
 integration test, and the tie-break in a unit test. Re-run in Docker: Subscriptions
 69, Transport 64, every merchant correctly mapped. 178 tests passing.
+
+---
+
+## Week 5: Dashboard, PWA, audit log (BR-11, NFR-06)
+
+### 5.1 Append-only audit log (NFR-06)
+
+- `audit_log`: `seq` (identity), `user_id`, `action`, `entity`, `entity_id`,
+  `details` (JSONB), `created_at`. `user_id` is deliberately **not** a foreign key so
+  the trail survives deletion of the user; `details` holds IDs, outcomes and counts
+  only, never personal data or secrets.
+- **Append-only in the database:** a trigger rejects every UPDATE, DELETE and
+  TRUNCATE, even with the application's own credentials. Verified by hand in
+  Postgres and by an integration test through the ORM.
+- Events are written **in the same transaction** as the change they describe:
+  consent started / granted / renewed / not granted / expired / revoked, connection
+  deleted, sync succeeded / failed (with counts), plus the deferred revoke job.
+- `GET /audit-log`: the user's own trail, newest first (transparency).
+
+**Problem and fix:** "consent revoked" and "connection deleted" are written in one
+transaction, and Postgres `now()` is fixed per transaction, so both had the same
+timestamp and their order was arbitrary. Added `seq BIGINT GENERATED ALWAYS AS
+IDENTITY` (strict insertion order, and gaps become detectable) and ordered by it.
+The migration was unreleased, so it was amended.
+
+### 5.2 Dashboard endpoint (BR-11, NFR-08)
+
+`GET /dashboard/summary?month=YYYY-MM`, per currency: spending and income for the
+month, spending by category (largest first, with share), and a six-month trend. One
+grouped SQL query (month by category by currency) feeds both. Definitions match
+budgets: net outflow per category (refunds reduce it); the built-in Income category
+is income; the built-in Transfers category is excluded (moving money between your own
+accounts is neither spending nor income).
+
+### 5.3 Backend tests
+
+Exact dashboard figures from controlled data (refund, excluded transfer, income,
+Uncategorized, shares 66.7 / 28.6 / 4.8 %); a year of demo data answered in under
+2 s (NFR-08) with categories summing to total spending; per-user isolation and
+validation; the full audit trail of connect → sync → disconnect in order; a cancelled
+consent; private trails; tampering blocked. **186 tests passing, 90% coverage.**
+
+### 5.4 Web app scaffold
+
+- `npm create vite` (React 19, Vite 8, TypeScript, oxlint), plus React Router,
+  TanStack Query, Chart.js, Tailwind CSS v4, vite-plugin-pwa, openapi-typescript,
+  Vitest and Testing Library.
+- TypeScript pinned to **5.9**: `openapi-typescript` needs the TypeScript JS API,
+  which TypeScript 7 (native) no longer ships. `strict` turned on (the template had
+  it off).
+- `npm audit`: findings only in build-time tooling (`workbox-build`); production
+  dependencies have none.
+
+### 5.5 API contract and client — [ADR 0005](adr/0005-web-app-auth-and-api-types.md)
+
+- `backend/scripts/export_openapi.py` → `docs/openapi.json` (26 paths) →
+  `npm run gen:api` → `web/src/api/schema.d.ts`; CI fails if either is stale.
+- `src/api/client.ts`: access token in memory, refresh token in `sessionStorage`; on
+  401 one shared refresh then retry; RFC 9457 errors as `ApiError`.
+- TanStack Query hooks per resource; mutations invalidate the data they affect.
+
+### 5.6 Pages and accessibility (BR-11, NFR-11)
+
+Sign in / register, Dashboard (month picker, renew banner, budget alerts, totals,
+spending-by-category doughnut, 6-month trend, budget bars), Accounts (totals per
+currency, grouped by bank), Transactions (search, status filter, per-row category with
+"apply to similar", paging), Budgets, Banks (connect, sync, renew, disconnect with
+confirmation) and the consent result page the API redirects to.
+
+Accessibility: brand colours chosen for ≥ 4.5:1 contrast (most ≥ 7:1), visible focus
+rings, skip link, labelled controls, progress bars with `aria-valuenow` /
+`aria-valuetext` and the status in words (not colour alone), and a text alternative
+for every chart (a list beside the doughnut, a visually hidden table for the trend).
+Layout works from 360 px.
+
+**Problem and fix:** the build failed with "Cannot apply unknown utility class
+`btn`": Tailwind v4 only lets `@apply` reuse registered utilities, so the component
+classes became `@utility` blocks.
+
+### 5.7 PWA
+
+`vite-plugin-pwa`: manifest (name, theme colour, standalone, 192/512 px icons incl.
+maskable) and a generated service worker that precaches the app shell only, never API
+responses. Icons are rendered by `web/scripts/make_icons.py` from the same design as
+the favicon, keeping the drawing in the maskable safe zone.
+
+### 5.8 Web tests and CI
+
+- Vitest: money and month formatting; the API client (bearer header, **one** refresh
+  for three concurrent 401s, session ended when refresh fails, problem details, 204);
+  the budget bar's accessible value and "Over budget" wording; sign-in success,
+  sign-in error message, password rule described to assistive tech. 14 tests.
+- CI: a `web` job (lint with warnings as errors, strict type-check, tests, build,
+  production-dependency audit) and an `api-contract` job (regenerate schema and types,
+  fail on diff); publishing now waits for both. Dependabot watches `web/` too.
+
+### 5.9 Verification in the browser
+
+Ran the Vite dev server against the Docker backend and drove the app in the browser
+pane: register → dashboard empty state → Banks → Mock Bank (UK) → the mock bank's
+consent page → Approve → back on `/connections/result?status=connected`, **still
+signed in after the full-page redirect** (session restored from the refresh token) →
+dashboard with £305.86 spent across 7 categories and six months of trend (£2,850
+income per month) → a £40 Eating out budget showing "£46.30 of £40.00 · Over budget ·
+115.8%" and a "Budget reached" alert on the dashboard → transactions "1–25 of 567"
+with pending markers and per-row category controls. No console errors.
+Screenshots weren't possible because the browser pane was hidden.

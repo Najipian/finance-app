@@ -47,7 +47,7 @@ The API answers the PWA and queues work in Redis; the sync worker is the only pa
 | Logging | structlog (JSON in prod) | Structured, searchable logs; no secrets logged |
 | Rate limiting | Fixed-window limiter on async Redis (ADR 0002) | Throttle auth and sync endpoints without blocking the event loop |
 | Front end | React + Vite + TypeScript, PWA | Installable on mobile, one codebase |
-| UI and charts | Tailwind CSS, Chart.js | Fast to build, clean charts |
+| UI and charts | Tailwind CSS v4, Chart.js, TanStack Query; API types generated from OpenAPI (ADR 0005) | Fast to build, clean charts, frontend can't drift from the API |
 | Tests | pytest, pytest-asyncio, httpx AsyncClient, respx, testcontainers; Playwright for E2E | Unit, API, contract and end-to-end |
 | Tooling | uv, ruff (lint + format), mypy --strict, pre-commit | Fast, consistent, enforced in CI |
 | Containers | Docker, Docker Compose | One-command local run |
@@ -178,7 +178,7 @@ Ten core tables; every user-owned row carries `user_id` (directly or through its
 | categories | id, user_id (null = default), name, parent_id, icon | 12 defaults seeded |
 | category_rules | id, user_id (null = built-in), match_field, operator, value, category_id, priority | User rules first, then priority, then newest; case-insensitive contains/equals/starts_with; 56 built-in rules seeded |
 | budgets | id, user_id, category_id, month, limit_amount, currency, alerted_80, alerted_100 | Unique (user_id, category_id, month) |
-| audit_log | id, user_id, action, entity, entity_id, metadata, created_at | Append-only |
+| audit_log | seq (identity), id, user_id (no FK, survives user deletion), action, entity, entity_id, details (JSONB, no personal data), created_at | Append-only: DB trigger rejects UPDATE/DELETE/TRUNCATE; ordered by seq |
 | notifications | id, user_id, kind, title, body, created_at, read_at | In-app alerts (BR-10); email optional per BRD dependencies |
 
 `dedup_key` = SHA-256 of the provider's transaction ID when present; otherwise of account, booking date, amount and description plus an occurrence number, so identical same-day transactions are both kept. Pending rows the bank stops returning within the sync window are deleted, because a pending transaction often books under a new ID (ADR 0004).

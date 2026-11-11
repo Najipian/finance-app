@@ -2,7 +2,7 @@
 
 A personal finance app built on UK/EU Open Banking. Connect bank accounts through a secure consent flow, see every balance and transaction in one place, get spending auto-categorized, and stay on top of monthly budgets.
 
-> Status: Weeks 1–4 of 6 done. Auth, bank consent lifecycle, accounts, transaction sync, auto-categorisation with user rules, budgets and alerts (BR-01..BR-10), CI/CD. Build journal: [docs/development-log.md](docs/development-log.md).
+> Status: Weeks 1–5 of 6 done. Backend (BR-01..BR-11), React PWA dashboard, append-only audit log, CI/CD. Build journal: [docs/development-log.md](docs/development-log.md).
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
@@ -55,6 +55,10 @@ Compose runs `alembic upgrade head` (the `migrate` service) before the API and w
 | GET / POST / DELETE | /api/v1/category-rules | Bearer | Own categorisation rules (BR-08) |
 | GET / PUT / DELETE | /api/v1/budgets?month=YYYY-MM | Bearer | Monthly budgets with spend and status (BR-09) |
 | GET | /api/v1/notifications | Bearer | Budget alerts at 80 % and 100 % (BR-10) |
+| GET | /api/v1/dashboard/summary?month=YYYY-MM | Bearer | Spending by category, 6-month trend (BR-11) |
+| GET | /api/v1/audit-log | Bearer | Own consent, sync and deletion events (NFR-06) |
+
+The full schema is in [docs/openapi.json](docs/openapi.json) (also served at `/docs`).
 | GET | /api/v1/health, /health/ready | — | Liveness / readiness |
 
 ### Try the bank connection offline
@@ -65,6 +69,19 @@ page. Open it in a browser and click **Approve**: you are redirected through the
 callback, the worker fetches accounts, and `GET /api/v1/accounts` shows them.
 Set `BANK_PROVIDER=yapily` with sandbox credentials from console.yapily.com to use
 real sandbox banks. See [ADR 0003](docs/adr/0003-bank-consent-flow.md) for the flow.
+
+### Web app (React PWA)
+
+```bash
+cd web
+npm install
+npm run dev            # http://localhost:5173, proxies /api to the backend on :8000
+```
+
+Register, connect **Mock Bank (UK)**, approve on the demo bank page, and the
+dashboard fills in. `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`.
+After changing the API: `uv run python scripts/export_openapi.py` (in `backend/`)
+then `npm run gen:api` (in `web/`).
 
 ### Without Docker for the API (faster reloads)
 
@@ -110,6 +127,8 @@ GitHub Actions (`.github/workflows/ci.yml`) on every push and PR: ruff + mypy, f
 - Rate limits on auth endpoints: 10/min per IP, and 5 login attempts per 15 min per account from any IP (429 + `Retry-After`). See [ADR 0002](docs/adr/0002-rate-limiting-on-async-redis.md).
 - Bank consent tokens are encrypted with AES-256-GCM (versioned keys, bound to their row) and never appear in URLs: the callback carries a one-time token exchanged server-side, and a single-use `state` stops CSRF and replay ([ADR 0003](docs/adr/0003-bank-consent-flow.md)).
 - Only the last 4 characters of account numbers are stored; bank I/O runs in the background worker.
+- Append-only audit log: a database trigger rejects UPDATE, DELETE and TRUNCATE ([development log 5.1](docs/development-log.md)).
+- Web app: access token in memory only, refresh token in sessionStorage, service worker never caches API data ([ADR 0005](docs/adr/0005-web-app-auth-and-api-types.md)).
 - No secrets in the repo: `.env` is git-ignored; `.env.example` holds placeholders.
 - The DB password is a `SecretStr` and is masked in logs and reprs.
 - Validation errors never echo submitted values; unexpected errors never leak internals.

@@ -28,3 +28,11 @@ updates:
       # updates of the 3.12 image still come through.
       - dependency-name: python
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      web-minor-and-patch:
+        update-types: [minor, patch]

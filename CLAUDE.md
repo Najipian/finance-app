@@ -17,7 +17,7 @@ Read both before starting a milestone. If a change contradicts them, update the 
 
 ## Current status
 
-**Weeks 1–4 done (Yapily sandbox check pending).** Repo: `D:\finance-app`, GitHub `Najipian/finance-app`. Week 1: skeleton, Docker, Alembic, auth BR-01 + rate limiting (ADR 0002), CI/CD, CodeQL, Dependabot. Week 2: AES-256-GCM `TokenCipher` (moved up from Week 5), `BankProvider` protocol, mock provider + demo bank page, Yapily adapter (contract-tested with respx from the API reference, not yet run against the sandbox: needs credentials), consent flow with one-time token + single-use Redis state (ADR 0003), `sync_accounts` arq job, `GET /accounts` with per-currency totals (BR-02, BR-05). Week 3: transactions sync with dedup and pending cleanup (ADR 0004), retries with visible sync status, 6-hourly scheduled sync, daily consent-expiry check, renew, disconnect (revoke + delete, deferred revoke on outage), manual sync, `GET /transactions` (BR-03, BR-04, BR-06). Step-by-step record: `docs/development-log.md` (update it with every step). Week 4: 12 default categories + 56 built-in rules seeded in the migration, pure rules engine (user rules first), categorisation and budget alerts after every sync, `PATCH /transactions/{id}` with apply-to-similar, categories/rules/budgets/notifications APIs, manual category carried from pending to booked (BR-07..BR-10). Next: Week 5 (dashboard, PWA, audit log).
+**Weeks 1–5 done (Yapily sandbox check pending).** Repo: `D:\finance-app`, GitHub `Najipian/finance-app`. Week 1: skeleton, Docker, Alembic, auth BR-01 + rate limiting (ADR 0002), CI/CD, CodeQL, Dependabot. Week 2: AES-256-GCM `TokenCipher` (moved up from Week 5), `BankProvider` protocol, mock provider + demo bank page, Yapily adapter (contract-tested with respx from the API reference, not yet run against the sandbox: needs credentials), consent flow with one-time token + single-use Redis state (ADR 0003), `sync_accounts` arq job, `GET /accounts` with per-currency totals (BR-02, BR-05). Week 3: transactions sync with dedup and pending cleanup (ADR 0004), retries with visible sync status, 6-hourly scheduled sync, daily consent-expiry check, renew, disconnect (revoke + delete, deferred revoke on outage), manual sync, `GET /transactions` (BR-03, BR-04, BR-06). Step-by-step record: `docs/development-log.md` (update it with every step). Week 4: 12 default categories + 56 built-in rules seeded in the migration, pure rules engine (user rules first), categorisation and budget alerts after every sync, `PATCH /transactions/{id}` with apply-to-similar, categories/rules/budgets/notifications APIs, manual category carried from pending to booked (BR-07..BR-10). Week 5: append-only audit log (DB trigger, `seq` ordering), `GET /dashboard/summary`, React + Vite + TS PWA in `web/` with types generated from `docs/openapi.json` (ADR 0005), web + api-contract CI jobs. Next: Week 6 (AWS deploy, HttpOnly refresh cookie + CSP, README polish, diagram, demo video).
 
 1. Week 1 — repo skeleton, `pyproject.toml` (uv), ruff/mypy/pytest config, pre-commit, Docker + Compose (api, Postgres, Redis), settings, DB session, Alembic, health endpoint, auth (BR-01), CI workflow, README.
 2. Week 2 — `BankProvider` protocol, mock provider, Yapily sandbox adapter, consent flow, accounts and balances (BR-02, BR-05).
@@ -50,10 +50,13 @@ uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "describe change"
 docker compose up --build        # from repo root: api + worker + postgres + redis
 docker compose up -d postgres redis   # just the infra, for running the API with uv
+uv run python scripts/export_openapi.py   # after API changes: refresh docs/openapi.json
 uv run pre-commit install --config ../.pre-commit-config.yaml   # once, enables git hooks
 ```
 
 The app has no module-level `app`; uvicorn uses the `create_app` factory (`--factory`).
+
+Web app, from `web/`: `npm install`, `npm run dev` (proxies `/api` to :8000), `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`, `npm run gen:api` (regenerate `src/api/schema.d.ts` from `docs/openapi.json`; CI fails if stale). TypeScript is pinned to 5.9 (ADR 0005).
 
 The owner develops on **Windows** with Docker Desktop. Keep commands cross-platform (no bash-only scripts as the only way to do something; prefer `uv run`, Python scripts, or Make-free docs).
 
