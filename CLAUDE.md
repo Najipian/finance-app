@@ -17,7 +17,7 @@ Read both before starting a milestone. If a change contradicts them, update the 
 
 ## Current status
 
-**Week 1 in progress.** Repo lives at `D:\finance-app`. Done: git, backend skeleton (uv, ruff/mypy/pytest config), settings, structlog, RFC 9457 error handling, DB base + async session factory, health endpoints (liveness + readiness), arq worker stub, Dockerfile + Compose. Next: Alembic, auth (BR-01), pre-commit, CI workflow.
+**Week 1 in progress.** Repo lives at `D:\finance-app`. Done: git, backend skeleton (uv, ruff/mypy/pytest config), settings, structlog, RFC 9457 error handling, DB base + async session factory, health endpoints (liveness + readiness), arq worker stub, Dockerfile + Compose, Alembic (async; `migrate` one-shot service in Compose), auth BR-01 (register, login, refresh rotation with reuse detection, logout, `GET /me`), pre-commit, GitHub Actions CI (lint, tests, pip-audit, Docker smoke test, GHCR publish on main), CodeQL, Dependabot. Next: rate limiting on auth (slowapi), then Week 2.
 
 1. Week 1 — repo skeleton, `pyproject.toml` (uv), ruff/mypy/pytest config, pre-commit, Docker + Compose (api, Postgres, Redis), settings, DB session, Alembic, health endpoint, auth (BR-01), CI workflow, README.
 2. Week 2 — `BankProvider` protocol, mock provider, Yapily sandbox adapter, consent flow, accounts and balances (BR-02, BR-05).
@@ -46,10 +46,11 @@ uv run pytest                    # all tests + coverage (integration tests need 
 uv run pytest -m "not integration"   # fast, no Docker
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src
-uv run alembic upgrade head      # (Alembic: not set up yet)
+uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "describe change"
 docker compose up --build        # from repo root: api + worker + postgres + redis
 docker compose up -d postgres redis   # just the infra, for running the API with uv
+uv run pre-commit install --config ../.pre-commit-config.yaml   # once, enables git hooks
 ```
 
 The app has no module-level `app`; uvicorn uses the `create_app` factory (`--factory`).

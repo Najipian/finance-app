@@ -1,0 +1,36 @@
+# Runs the same checks as CI before each commit.
+#   cd backend && uv run pre-commit install --config ../.pre-commit-config.yaml
+# (or from the repo root: backend\.venv\Scripts\pre-commit install)
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      # Use the project's own pinned ruff and mypy (uv.lock), not separate copies.
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --directory backend ruff check --fix
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --directory backend ruff format
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: mypy
+        name: mypy --strict
+        entry: uv run --directory backend mypy src
+        language: system
+        types: [python]
+        pass_filenames: false
