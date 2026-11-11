@@ -123,8 +123,8 @@ finance-app/
 | connections | List banks, start consent, handle callback, renew, revoke | BR-02, BR-03, BR-04 |
 | accounts | Store and serve accounts and balances; totals per currency | BR-05 |
 | transactions | id, account_id, provider_transaction_id, booking_date, amount, currency, description, merchant, status, dedup_key | Unique (account_id, dedup_key); no raw payload stored (NFR-05); category_id added in Week 4 (ADR 0004) |
-| categories | Default categories, user rules, apply rules to new transactions | BR-07, BR-08 |
-| budgets | Monthly limits, spend calculation, threshold checks | BR-09, BR-10 |
+| categories | id, user_id (null = default), name, icon | 12 defaults seeded by migration; names unique per user (NULLS NOT DISTINCT); no sub-categories yet |
+| budgets | id, user_id, category_id, month, limit_amount, currency, alerted_80, alerted_100 | Unique (user_id, category_id, month); spend = net outflow incl. pending; raising a limit re-arms alerts |
 | notifications | In-app and email alerts | BR-10 |
 | audit | Append-only log of consent, sync, deletion events | NFR-06 |
 | providers | `BankProvider` protocol + Yapily and mock adapters | — |
@@ -176,9 +176,10 @@ Ten core tables; every user-owned row carries `user_id` (directly or through its
 | balances | id, account_id, type, amount, currency, as_of | Unique (account_id, type), upserted each sync; headline = available, else booked |
 | transactions | id, account_id, provider_tx_id, booking_date, amount, currency, description, merchant, status, category_id, dedup_key, raw_json | Unique (account_id, dedup_key) |
 | categories | id, user_id (null = default), name, parent_id, icon | 12 defaults seeded |
-| category_rules | id, user_id, match_field, operator, value, category_id, priority | Evaluated in priority order |
+| category_rules | id, user_id (null = built-in), match_field, operator, value, category_id, priority | User rules first, then priority, then newest; case-insensitive contains/equals/starts_with; 56 built-in rules seeded |
 | budgets | id, user_id, category_id, month, limit_amount, currency, alerted_80, alerted_100 | Unique (user_id, category_id, month) |
 | audit_log | id, user_id, action, entity, entity_id, metadata, created_at | Append-only |
+| notifications | id, user_id, kind, title, body, created_at, read_at | In-app alerts (BR-10); email optional per BRD dependencies |
 
 `dedup_key` = SHA-256 of the provider's transaction ID when present; otherwise of account, booking date, amount and description plus an occurrence number, so identical same-day transactions are both kept. Pending rows the bank stops returning within the sync window are deleted, because a pending transaction often books under a new ID (ADR 0004).
 
@@ -256,8 +257,8 @@ All bank I/O runs in arq workers, so a slow bank never blocks the UI.
 | Job | Trigger | What it does |
 | --- | --- | --- |
 | sync_connection | Every 6 hours per active connection, after consent, or manual | Fetch accounts, balances, transactions since last sync minus 3 days |
-| categorize_transactions | After each sync | Apply user rules, then defaults; set category_id |
-| check_budgets | After categorize | Recalculate month spend; send 80% and 100% alerts once |
+| categorize_transactions | After each sync (runs inside `sync_connection`) | Apply user rules, then defaults, to uncategorised transactions; manual choices never change |
+| check_budgets | After categorize, and after re-categorising or changing a budget | Recalculate month spend; send 80% and 100% alerts once (in-app notifications) |
 | check_consent_expiry | Daily at 06:00 UTC | Flag connections expiring within 7 days; mark expired as needs_renewal |
 
 **Idempotency and retries**

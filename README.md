@@ -2,7 +2,7 @@
 
 A personal finance app built on UK/EU Open Banking. Connect bank accounts through a secure consent flow, see every balance and transaction in one place, get spending auto-categorized, and stay on top of monthly budgets.
 
-> Status: Weeks 1–3 of 6 done. Auth (BR-01), bank consent, renewal and disconnect (BR-02..04), accounts across banks (BR-05), transaction sync without duplicates (BR-06), CI/CD. Build journal: [docs/development-log.md](docs/development-log.md).
+> Status: Weeks 1–4 of 6 done. Auth, bank consent lifecycle, accounts, transaction sync, auto-categorisation with user rules, budgets and alerts (BR-01..BR-10), CI/CD. Build journal: [docs/development-log.md](docs/development-log.md).
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
@@ -50,6 +50,11 @@ Compose runs `alembic upgrade head` (the `migrate` service) before the API and w
 | DELETE | /api/v1/connections/{id} | Bearer | Disconnect: revoke and delete data (BR-04) |
 | GET | /api/v1/accounts | Bearer | All accounts, balances, totals per currency (BR-05) |
 | GET | /api/v1/transactions | Bearer | Filter by account, dates, status, text; paged (BR-06) |
+| PATCH | /api/v1/transactions/{id} | Bearer | Change category; `apply_to_similar` creates a rule (BR-08) |
+| GET / POST / DELETE | /api/v1/categories | Bearer | 12 built-in plus own categories (BR-07) |
+| GET / POST / DELETE | /api/v1/category-rules | Bearer | Own categorisation rules (BR-08) |
+| GET / PUT / DELETE | /api/v1/budgets?month=YYYY-MM | Bearer | Monthly budgets with spend and status (BR-09) |
+| GET | /api/v1/notifications | Bearer | Budget alerts at 80 % and 100 % (BR-10) |
 | GET | /api/v1/health, /health/ready | — | Liveness / readiness |
 
 ### Try the bank connection offline

@@ -348,3 +348,130 @@ per account, no pending left); the assertion now checks per account.
 - [ADR 0004](adr/0004-transaction-dedup-and-pending.md): pending cleanup, occurrence
   numbers, no raw payload storage.
 - Technical design, README (endpoints, status), CLAUDE.md status updated.
+
+---
+
+## Week 4: Categories, rules, budgets, alerts (BR-07..BR-10)
+
+### 4.1 Data model
+
+- `categories`: `user_id` NULL = built-in default, otherwise the user's own; names
+  unique per user with Postgres `NULLS NOT DISTINCT`, so defaults can't be duplicated
+  either. No sub-categories (`parent_id` in the design) until a feature needs them.
+- `category_rules`: field (`description` / `merchant`), operator (`contains` /
+  `equals` / `starts_with`, always case-insensitive), value, category, priority;
+  `user_id` NULL = built-in.
+- `transactions` gained `category_id` (SET NULL if the category is deleted) and
+  `category_source` (`rule` / `manual`): automatic re-categorisation never
+  overwrites a choice the user made by hand.
+- `budgets`: unique per user, category and month, with `alerted_80` / `alerted_100`
+  so each alert fires once (BR-10).
+- `notifications`: in-app alerts. Email has no provider yet; the BRD's fallback is
+  in-app notifications only.
+
+### 4.2 Migration and default categories
+
+- One migration for the four new tables and the transaction columns, checked
+  up → down → up; Postgres has CHECK constraints for every enum column and the
+  unique constraints (budgets per user/category/month, category names per user).
+- **12 default categories and 56 built-in rules** are seeded inside the migration as
+  frozen literal data (a migration must give the same result forever, so it never
+  imports app code). IDs are `uuid5` of the name: identical in every environment.
+  Rules are case-insensitive keyword matches on the description (TESCO, SAINSBURY…
+  → Groceries; PRET, DELIVEROO… → Eating out; SALARY → Income; …).
+
+### 4.3 Rules engine and categorisation (BR-07)
+
+- `modules/categories/engine.py` is pure: rules are ordered **user rules first**
+  (a user's rule always beats a built-in one), then lower priority, then newest; the
+  first case-insensitive match wins; no match = Uncategorized (US-06).
+- `CategorizationService.categorize_new` runs in the worker right after every sync,
+  followed by the budget alert check, so new transactions get categories and alerts
+  fire promptly. `recategorize` runs when a user adds or deletes a rule and
+  re-evaluates every transaction whose category came from a rule; **manual choices are
+  never changed**.
+- Budget spend (`modules/budgets/service.py`) is the net outflow of a category in a
+  month and currency (refunds reduce it; pending counts). Each threshold alerts once;
+  raising a limit so spend falls back under a threshold re-arms it, lowering it below
+  current spend alerts immediately.
+
+### 4.4 Endpoints (BR-08, BR-09, BR-10)
+
+- `PATCH /transactions/{id}`: sets the category **manually** (rules never override
+  it). With `apply_to_similar`, also creates an *exact-match* rule on the merchant
+  (or description if the bank gave no merchant) and applies it to past transactions
+  immediately and future ones on sync (US-06). Exact match avoids over-matching.
+- `GET/POST/DELETE /categories` and `/category-rules`: built-in categories are usable
+  but can't be deleted (409); deleting a user category removes its rules and leaves
+  its transactions Uncategorized; adding or deleting a rule re-evaluates the user's
+  non-manual transactions.
+- `GET /budgets?month=YYYY-MM`, `PUT /budgets`, `DELETE /budgets/{id}`: spend,
+  remaining (negative when over), percent used and status (`ok` / `warning` /
+  `exceeded`).
+- `GET /notifications`, `POST /notifications/{id}/read`.
+- Every resource is scoped to the user; other users' IDs are 404.
+
+### 4.5 Manual category carry-over (closes the gap in ADR 0004)
+
+If a user sets a category on a *pending* transaction and it books under a new ID,
+the pending row is deleted. Before that delete, the sync now copies the manual
+category to the matching booked row (same account, amount and description, booked
+within 7 days, not already set by hand) in one `UPDATE … FROM` statement.
+
+### 4.6 Tests
+
+- Unit: rules engine (user beats built-in even with a worse priority, priority then
+  newest, every operator, case-insensitive, merchant vs description, blank values);
+  budget thresholds (239.99 of 300 is not 80 %, 240.00 is; 300.00 is 100 %), percent,
+  status, zero limits, month boundaries (December → January).
+- Integration: synced demo transactions categorised by the defaults (Tesco →
+  Groceries, Pret → Eating out, salary → Income, TfL → Transport); unmatched stay
+  Uncategorized; a manual category survives re-sync and re-categorisation;
+  apply-to-similar creates a `merchant equals Boots` rule, updates the other Boots
+  transactions and catches future ones; a user rule overrides a built-in one and
+  deleting it restores the default; category name clashes (including defaults,
+  case-insensitive) are 409; built-ins can't be deleted; other users' categories,
+  transactions, budgets and notifications are 404; a manual category on a pending
+  transaction survives booking under a new ID; **US-07 exactly**: a 300 GBP Eating out
+  budget alerts at 240 (80 %) and 300 (100 %), each once, ignoring spend in other
+  currencies; refunds reduce spend; raising a limit re-arms alerts and lowering it
+  below spend alerts immediately; month and amount validation.
+
+**Problems and fixes**
+
+- Test cleanup used `TRUNCATE users CASCADE`, which empties *whole* referencing
+  tables in Postgres. Now that `categories` and `category_rules` reference `users`,
+  it would have wiped the seeded defaults after the first test. Cleanup now uses
+  `DELETE FROM users`, which cascades row by row and leaves built-in rows alone.
+- mypy flagged a dictionary keyed by a nullable category ID that SQL had already
+  filtered; the filter is now explicit in Python too, rather than silenced.
+
+**Result:** 177 tests passing on the first full run, 91% coverage.
+
+### 4.7 Documentation
+
+Technical design (data model rows for categories, rules, budgets and the new
+notifications table; categorisation and budget checks run inside the sync job
+rather than as separate jobs, which keeps ordering simple), README endpoints and
+status, CLAUDE.md status.
+
+### 4.8 Verification in Docker, and a bug it found
+
+Ran the flow against the real stack: the worker synced 567 transactions and
+categorised all of them; a 5 GBP Eating out budget for the current month showed
+46.30 spent (`exceeded`, 926 %) and produced one "Budget reached" notification;
+apply-to-similar on a Boots transaction created a rule and moved the other 77 Boots
+transactions.
+
+**Bug found:** Subscriptions had zero transactions and Transport about double. The
+built-in keyword `TFL` matches inside "NE**TFL**IX", so Netflix went to Transport.
+Worse, built-in rules share a priority and creation time, so which rule ran first was
+undefined. The same class of problem existed for `EE ` ("COFF**EE** SHOP" → Bills) and
+`LIME` ("SUB**LIME**").
+
+**Fixes:** more specific seed keywords (`TFL TRAVEL`, `EE LIMITED`, `LIME BIKE`; the
+migration was not yet released, so amending it was safe), and a deterministic
+tie-break in the engine: among otherwise equal rules the longer, more specific value
+wins, then the ID. Regression checks: Netflix → Subscriptions and Shell → Fuel in the
+integration test, and the tie-break in a unit test. Re-run in Docker: Subscriptions
+69, Transport 64, every merchant correctly mapped. 178 tests passing.
