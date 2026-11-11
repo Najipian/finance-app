@@ -21,6 +21,7 @@ from finance_app.core.config import Settings
 from finance_app.core.crypto import TokenCipher
 from finance_app.core.errors import ConflictError, DomainError, NotFoundError
 from finance_app.core.jobs import JobQueue
+from finance_app.modules.audit.service import AuditAction, AuditService
 from finance_app.modules.connections.models import BankConnection, ConnectionStatus
 from finance_app.modules.connections.repository import ConnectionRepository
 from finance_app.modules.connections.state import ConsentStateStore, StateBinding
@@ -95,6 +96,7 @@ class ConnectionService:
         self._jobs = jobs
         self._settings = settings
         self._connections = ConnectionRepository(session)
+        self._audit = AuditService(session)
 
     async def list_institutions(self, country: str) -> list[Institution]:
         """Banks available in a country.
@@ -148,6 +150,13 @@ class ConnectionService:
             await self._session.rollback()
             log.warning("provider_error", operation="create_consent", error=str(exc))
             raise ProviderUnavailableError("Could not contact the bank. Try again.") from exc
+        self._audit.record(
+            AuditAction.CONSENT_STARTED,
+            user_id=user_id,
+            entity="connection",
+            entity_id=connection.id,
+            details={"institution_id": institution.id, "provider": self._provider.name},
+        )
         await self._session.commit()
         log.info("consent_started", user_id=str(user_id), connection_id=str(connection.id))
         return connection, consent.authorisation_url
@@ -184,8 +193,15 @@ class ConnectionService:
             if not binding.renew:
                 # A new connection that was never approved: keep nothing (US-01).
                 await self._connections.delete(connection)
-                await self._session.commit()
             # A cancelled renewal leaves the existing connection and its data alone.
+            self._audit.record(
+                AuditAction.CONSENT_NOT_GRANTED,
+                user_id=binding.user_id,
+                entity="connection",
+                entity_id=connection.id,
+                details={"outcome": outcome.value, "renewal": binding.renew},
+            )
+            await self._session.commit()
             log.info("consent_not_granted", connection_id=str(connection.id), outcome=outcome)
             return CallbackResult(outcome, connection.id)
 
@@ -196,6 +212,13 @@ class ConnectionService:
         connection.provider_consent_id = consent.consent_id
         connection.consent_expires_at = consent.expires_at
         connection.status = ConnectionStatus.ACTIVE
+        self._audit.record(
+            AuditAction.CONSENT_RENEWED if binding.renew else AuditAction.CONSENT_GRANTED,
+            user_id=binding.user_id,
+            entity="connection",
+            entity_id=connection.id,
+            details={"expires_at": consent.expires_at.isoformat() if consent.expires_at else None},
+        )
         await self._session.commit()
         await self._jobs.enqueue_sync(connection.id)
         if superseded_consent_id and superseded_consent_id != consent.consent_id:
@@ -229,6 +252,14 @@ class ConnectionService:
         except ProviderError as exc:
             log.warning("provider_error", operation="create_consent", error=str(exc))
             raise ProviderUnavailableError("Could not contact the bank. Try again.") from exc
+        self._audit.record(
+            AuditAction.CONSENT_STARTED,
+            user_id=user_id,
+            entity="connection",
+            entity_id=connection.id,
+            details={"renewal": True, "provider": connection.provider},
+        )
+        await self._session.commit()
         log.info("renewal_started", user_id=str(user_id), connection_id=str(connection.id))
         return consent.authorisation_url
 
@@ -243,13 +274,31 @@ class ConnectionService:
         """
         connection = await self._owned(user_id, connection_id)
         consent_id, provider = connection.provider_consent_id, connection.provider
+        revoked = deferred = False
         if consent_id:
             try:
                 await self._provider.revoke_consent(consent_id)
+                revoked = True
             except ProviderError as exc:
                 log.warning("revoke_deferred", connection_id=str(connection_id), error=str(exc))
                 await self._jobs.enqueue_revoke(provider, consent_id)
+                deferred = True
         await self._connections.delete(connection)  # accounts, balances, transactions cascade
+        if revoked:
+            self._audit.record(
+                AuditAction.CONSENT_REVOKED,
+                user_id=user_id,
+                entity="connection",
+                entity_id=connection_id,
+                details={"provider": provider},
+            )
+        self._audit.record(
+            AuditAction.CONNECTION_DELETED,
+            user_id=user_id,
+            entity="connection",
+            entity_id=connection_id,
+            details={"revoked_at_provider": revoked, "revocation_deferred": deferred},
+        )
         await self._session.commit()
         log.info("connection_deleted", user_id=str(user_id), connection_id=str(connection_id))
 

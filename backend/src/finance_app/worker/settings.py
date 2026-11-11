@@ -35,6 +35,7 @@ from finance_app.core.logging import configure_logging
 # can't be resolved when a job first touches the database.
 from finance_app.db import registry  # noqa: F401
 from finance_app.db.session import create_engine, create_sessionmaker
+from finance_app.modules.audit.service import AuditAction, AuditService
 from finance_app.modules.budgets.service import BudgetService
 from finance_app.modules.categories.categorize import CategorizationService
 from finance_app.modules.connections.lifecycle import ConsentLifecycleService
@@ -148,6 +149,14 @@ async def revoke_consent(ctx: dict[str, Any], provider_name: str, consent_id: st
             log.error("revoke_failed", provider=provider_name, error=str(exc))
             return False
         raise Retry(defer=retry_delay(job_try)) from exc
+    async with ctx["sessionmaker"]() as session:
+        AuditService(session).record(
+            AuditAction.CONSENT_REVOKED,
+            user_id=None,  # the connection (and its user link) was already deleted
+            entity="consent",
+            details={"provider": provider_name, "deferred": True},
+        )
+        await session.commit()
     log.info("consent_revoked", provider=provider_name)
     return True
 

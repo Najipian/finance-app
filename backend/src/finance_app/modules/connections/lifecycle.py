@@ -15,6 +15,7 @@ import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from finance_app.modules.audit.service import AuditAction, AuditService
 from finance_app.modules.connections.models import BankConnection, ConnectionStatus
 
 RENEWAL_WARNING = timedelta(days=7)
@@ -61,9 +62,19 @@ class ConsentLifecycleService:
                 BankConnection.consent_expires_at <= now,
             )
             .values(status=ConnectionStatus.NEEDS_RENEWAL)
-            .returning(BankConnection.id)
+            .returning(BankConnection.id, BankConnection.user_id)
         )
-        expired_ids = expired.scalars().all()
+        expired_rows = expired.all()
+        expired_ids = [row.id for row in expired_rows]
+        audit = AuditService(self._session)
+        for row in expired_rows:
+            audit.record(
+                AuditAction.CONSENT_EXPIRED,
+                user_id=row.user_id,
+                entity="connection",
+                entity_id=row.id,
+                details={"detected_by": "daily_check"},
+            )
         soon = await self._session.execute(
             select(BankConnection.id).where(
                 BankConnection.status == ConnectionStatus.ACTIVE,

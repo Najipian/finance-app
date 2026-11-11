@@ -8,6 +8,7 @@ from finance_app.api.v1 import (
     budgets,
     categories,
     connections,
+    dashboard,
     health,
     notifications,
     transactions,
@@ -24,3 +25,4 @@ api_router.include_router(transactions.router)
 api_router.include_router(categories.router)
 api_router.include_router(budgets.router)
 api_router.include_router(notifications.router)
+api_router.include_router(dashboard.router)

@@ -86,13 +86,35 @@ class _Provider:
         self.revoked.append(consent_id)
 
 
-async def test_revoke_job_retries_then_succeeds_br04() -> None:
-    provider = _Provider(failures=1)
+class _RecordingSession:
+    """Captures audit events the job stages."""
 
+    def __init__(self) -> None:
+        self.added: list[Any] = []
+        self.committed = False
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+
+    async def commit(self) -> None:
+        self.committed = True
+
+
+async def test_revoke_job_retries_then_succeeds_and_is_audited_br04() -> None:
+    provider = _Provider(failures=1)
+    session = _RecordingSession()
+
+    @asynccontextmanager
+    async def sessionmaker() -> AsyncIterator[_RecordingSession]:
+        yield session
+
+    ctx: dict[str, Any] = {"provider": provider, "sessionmaker": sessionmaker}
     with pytest.raises(Retry):
-        await worker.revoke_consent({"provider": provider, "job_try": 1}, "mock", "c-1")
-    assert await worker.revoke_consent({"provider": provider, "job_try": 2}, "mock", "c-1")
+        await worker.revoke_consent({**ctx, "job_try": 1}, "mock", "c-1")
+    assert await worker.revoke_consent({**ctx, "job_try": 2}, "mock", "c-1")
+
     assert provider.revoked == ["c-1"]
+    assert [e.action for e in session.added] == ["consent.revoked"] and session.committed
 
 
 async def test_revoke_job_gives_up_and_skips_other_providers() -> None:

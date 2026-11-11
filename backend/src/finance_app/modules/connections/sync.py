@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from finance_app.core.crypto import TokenCipher
 from finance_app.modules.accounts.repository import AccountRepository
+from finance_app.modules.audit.service import AuditAction, AuditService
 from finance_app.modules.connections.models import (
     BankConnection,
     ConnectionStatus,
@@ -61,6 +62,7 @@ class ConnectionSyncService:
         self._connections = ConnectionRepository(session)
         self._accounts = AccountRepository(session)
         self._transactions = TransactionRepository(session)
+        self._audit = AuditService(session)
 
     async def sync(self, connection_id: uuid.UUID) -> SyncResult | None:
         """Sync accounts, balances and transactions for one connection.
@@ -108,6 +110,17 @@ class ConnectionSyncService:
         connection.last_sync_attempt_at = now
         connection.last_sync_status = SyncStatus.OK
         connection.last_sync_error = None
+        self._audit.record(
+            AuditAction.SYNC_SUCCEEDED,
+            user_id=connection.user_id,
+            entity="connection",
+            entity_id=connection.id,
+            details={
+                "accounts": result.accounts,
+                "transactions": result.transactions,
+                "stale_pending_removed": result.stale_pending_removed,
+            },
+        )
         await self._session.commit()
         log.info(
             "connection_synced",
@@ -151,6 +164,13 @@ class ConnectionSyncService:
         connection.last_sync_status = SyncStatus.FAILED
         connection.last_sync_error = "consent_expired"
         connection.last_sync_attempt_at = datetime.now(UTC)
+        self._audit.record(
+            AuditAction.CONSENT_EXPIRED,
+            user_id=connection.user_id,
+            entity="connection",
+            entity_id=connection.id,
+            details={"detected_by": "sync"},
+        )
         await self._session.commit()
         log.warning("consent_needs_renewal", connection_id=str(connection.id))
 
@@ -162,4 +182,11 @@ class ConnectionSyncService:
         connection.last_sync_status = SyncStatus.FAILED if final else SyncStatus.RETRYING
         connection.last_sync_error = "provider_unavailable"
         connection.last_sync_attempt_at = datetime.now(UTC)
+        self._audit.record(
+            AuditAction.SYNC_FAILED,
+            user_id=connection.user_id,
+            entity="connection",
+            entity_id=connection.id,
+            details={"final": final, "error": "provider_unavailable"},
+        )
         await self._session.commit()
