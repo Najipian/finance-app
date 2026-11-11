@@ -48,7 +48,7 @@ jobs:
       # Integration tests start Postgres 16 and Redis 7 with testcontainers
       # (Docker is preinstalled on GitHub's Ubuntu runners).
       - run: uv run pytest --cov-report=xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage
