@@ -582,3 +582,18 @@ income per month) → a £40 Eating out budget showing "£46.30 of £40.00 · Ov
 115.8%" and a "Budget reached" alert on the dashboard → transactions "1–25 of 567"
 with pending markers and per-row category controls. No console errors.
 Screenshots weren't possible because the browser pane was hidden.
+
+### 5.10 CI fix: lock file generated on Windows
+
+The first CI run of the new jobs failed at `npm ci`: "package.json and
+package-lock.json are not in sync … Missing: @emnapi/core". These are optional,
+platform-specific WebAssembly fallbacks (used by Rolldown, oxlint and Tailwind's
+native engine); npm on Windows didn't record them in the lock file, and npm on Linux
+requires them. Regenerated the lock file on Linux in a `node:24-slim` container
+(`npm install --package-lock-only`), proved `npm ci` passes there, then reinstalled on
+Windows with `npm ci` and re-ran lint, type-check, tests, build and audit. **Rule from
+now on:** refresh `web/package-lock.json` in the Linux container, not on Windows:
+
+```bash
+docker run --rm -v "$PWD/web:/app" -w /app node:24-slim npm install --package-lock-only
+```

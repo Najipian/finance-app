@@ -56,7 +56,7 @@ uv run pre-commit install --config ../.pre-commit-config.yaml   # once, enables 
 
 The app has no module-level `app`; uvicorn uses the `create_app` factory (`--factory`).
 
-Web app, from `web/`: `npm install`, `npm run dev` (proxies `/api` to :8000), `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`, `npm run gen:api` (regenerate `src/api/schema.d.ts` from `docs/openapi.json`; CI fails if stale). TypeScript is pinned to 5.9 (ADR 0005).
+Web app, from `web/`: `npm install`, `npm run dev` (proxies `/api` to :8000), `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`, `npm run gen:api` (regenerate `src/api/schema.d.ts` from `docs/openapi.json`; CI fails if stale). TypeScript is pinned to 5.9 (ADR 0005). **Regenerate `web/package-lock.json` on Linux** (`docker run --rm -v "$PWD/web:/app" -w /app node:24-slim npm install --package-lock-only`): npm on Windows omits Linux-only optional dependencies and CI's `npm ci` then fails.
 
 The owner develops on **Windows** with Docker Desktop. Keep commands cross-platform (no bash-only scripts as the only way to do something; prefer `uv run`, Python scripts, or Make-free docs).
 
