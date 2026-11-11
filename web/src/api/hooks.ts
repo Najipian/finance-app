@@ -13,6 +13,7 @@ import type {
   Notification,
   RecategorizeResult,
   TransactionPage,
+  User,
 } from "./types";
 
 export const useDashboard = (month: string) =>
@@ -20,6 +21,9 @@ export const useDashboard = (month: string) =>
     queryKey: ["dashboard", month],
     queryFn: () => api<DashboardSummary>("/dashboard/summary", { query: { month } }),
   });
+
+export const useMe = () =>
+  useQuery({ queryKey: ["me"], queryFn: () => api<User>("/me"), staleTime: Infinity });
 
 export const useAccounts = () =>
   useQuery({ queryKey: ["accounts"], queryFn: () => api<AccountsOverview>("/accounts") });

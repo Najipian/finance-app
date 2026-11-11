@@ -659,3 +659,30 @@ the UK keyword rules (53 categorised); real banks send merchant names.
 Each fix has a contract test from the real response shape (bare Consent object,
 fields-not-values error message, `before` never in the future, monthly windows):
 114 unit tests passing.
+
+## UI redesign: calm overview, header and footer (BR-11)
+
+The first web UI worked but looked generic, and real sandbox data exposed problems:
+the trend axis read "£30,000,000.00", the doughnut was one solid ring (99.8%
+uncategorised), EUR appeared before GBP, and pages flashed a bare "Loading…". Three
+directions were mocked up; the owner chose **A (calm overview)** with **header 1**
+(top bar, underline tabs) and **footer A** (full footer).
+
+| Area | Change | Why |
+| --- | --- | --- |
+| Header | White sticky bar with logo mark, underline tabs, sync status ("Synced 4 min ago", links to Banks, turns red on a failed sync), alerts bell with a count, avatar menu (email from `/me`, sign out; closes on Escape or outside click) | Lighter than the dark-green bar; status a user cares about is always visible |
+| Mobile | Below `md` the tabs move to a fixed bottom tab bar (safe-area aware); the header keeps logo, sync icon, bell and avatar | Thumb reach in the installed PWA |
+| Footer | Product, Trust and Project link columns, "read-only, never moves your money", "portfolio project, sandbox data only", app version | Tells a reviewer what the app is and where the code, API docs and security notes are |
+| Overview | Net worth, spent this month vs last month, budget status; ranked category bars; 6-month trend with the selected month highlighted; recent activity; accounts summary; budgets | Numbers first, one screen |
+| Charts | Doughnut replaced by horizontal bars (top 5, rest grouped, "Over budget" in words); axis labels compact ("£1.2k", "£30m") | Lengths compare better than slices; an outlier can no longer make the axis unreadable |
+| Currency | GBP first, then alphabetical; other currencies get their own section only if they had spending that month | UK-first product |
+| Loading | Skeleton placeholders shaped like the content (`role="status"`, no pulse with reduced motion) | No layout jump, no bare text flash |
+
+Money stays exact: the month-on-month difference and the grouped "N more categories"
+total are computed in integer pence (`toMinor`/`subtractMoney`, BigInt), never in
+floating point; `Number()` is used only for bar widths and chart heights. Icons are
+inline SVG (no icon library). `/docs` and `/openapi.json` are proxied in development
+and excluded from the service worker's navigation fallback, so the footer's API docs
+link works. Tests: exact subtraction (0.30 − 0.10), compact labels, currency order,
+relative times, category grouping and the over-budget label (20 web tests).
+Checked in the browser at 1280 px and 375 px with Yapily sandbox data.

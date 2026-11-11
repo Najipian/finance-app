@@ -26,11 +26,29 @@ export function ErrorMessage({ error }: { error: unknown }) {
   );
 }
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
+/** A grey placeholder block that pulses while data loads (motion off for reduced-motion users). */
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <div aria-hidden="true" className={`animate-pulse rounded-md bg-black/6 motion-reduce:animate-none ${className}`} />;
+}
+
+/**
+ * Loading state shaped like the list it replaces, so the page does not jump when data
+ * arrives. Screen readers hear the label once (role="status").
+ */
+export function Loading({ label = "Loading…", rows = 4 }: { label?: string; rows?: number }) {
   return (
-    <p role="status" className="py-8 text-center text-sm text-muted">
-      {label}
-    </p>
+    <div role="status" className="card space-y-4">
+      <span className="sr-only">{label}</span>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center justify-between gap-4">
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3.5 w-2/5" />
+            <Skeleton className="h-3 w-1/4" />
+          </div>
+          <Skeleton className="h-4 w-20" />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -43,10 +61,13 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
   );
 }
 
-export function PageHeader({ title, actions }: { title: string; actions?: ReactNode }) {
+export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h1 className="text-xl font-bold sm:text-2xl">{title}</h1>
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
+      </div>
       {actions}
     </div>
   );

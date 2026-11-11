@@ -4,8 +4,11 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+import pkg from "./package.json" with { type: "json" };
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [
     react(),
     tailwindcss(),
@@ -30,7 +33,7 @@ export default defineConfig({
         // Cache the app shell only. API responses contain personal financial data
         // and are never cached by the service worker.
         globPatterns: ["**/*.{js,css,html,svg,png}"],
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/docs/, /^\/openapi\.json/],
         runtimeCaching: [],
       },
     }),
@@ -38,7 +41,12 @@ export default defineConfig({
   server: {
     port: 5173,
     // Same-origin in development: no CORS needed.
-    proxy: { "/api": "http://localhost:8000" },
+    proxy: {
+      "/api": "http://localhost:8000",
+      // FastAPI's interactive docs, linked from the footer.
+      "/docs": "http://localhost:8000",
+      "/openapi.json": "http://localhost:8000",
+    },
   },
   test: {
     environment: "jsdom",

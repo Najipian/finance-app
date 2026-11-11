@@ -27,7 +27,7 @@ body {
 /* Component classes. Tailwind v4 only lets @apply reuse registered utilities,
    so these are declared with @utility rather than as plain classes. */
 @utility card {
-  @apply rounded-xl bg-white p-4 shadow-sm ring-1 ring-black/5 sm:p-5;
+  @apply rounded-2xl bg-white p-4 ring-1 ring-black/8 sm:p-5;
 }
 
 @utility btn {
