@@ -597,3 +597,17 @@ now on:** refresh `web/package-lock.json` in the Linux container, not on Windows
 ```bash
 docker run --rm -v "$PWD/web:/app" -w /app node:24-slim npm install --package-lock-only
 ```
+
+### 5.11 Dependabot round for web/
+
+Four PRs after `web/` joined Dependabot:
+
+| PR | Change | Outcome |
+| --- | --- | --- |
+| #10 | actions/setup-node 5 → 7 | Merged. Its own CI failed only because it was branched before the lock-file fix (5.10); verified on the merged `main` run. v7 changes (ESM internals, removed dummy `NODE_AUTH_TOKEN`, cache outputs) don't affect us. |
+| #11 | jsdom 29 → 31 | Merged. Breaking changes (canvas backend, new CSS engine, script-blocking parsing) don't touch our tests; clean `npm ci` plus lint, types, tests, build and audit pass locally and in CI. |
+| #12 | @types/node 24 → 26 | Declined with an ignore rule: Node types must match the Node 24 runtime, or code could use APIs that don't exist. |
+| #13 | typescript 5.9 → 7.0 | Declined with an ignore rule: its CI failed exactly as ADR 0005 predicts (openapi-typescript needs the TypeScript JS API). |
+
+Dependabot closed #12 and #13 itself after reading the ignore rules. CI green on
+every job.
