@@ -122,7 +122,7 @@ finance-app/
 | users | Profile, data export, account deletion | NFR-04 |
 | connections | List banks, start consent, handle callback, renew, revoke | BR-02, BR-03, BR-04 |
 | accounts | Store and serve accounts and balances; totals per currency | BR-05 |
-| transactions | Store, deduplicate, search, filter, CSV export | BR-06, BR-12 |
+| transactions | id, account_id, provider_transaction_id, booking_date, amount, currency, description, merchant, status, dedup_key | Unique (account_id, dedup_key); no raw payload stored (NFR-05); category_id added in Week 4 (ADR 0004) |
 | categories | Default categories, user rules, apply rules to new transactions | BR-07, BR-08 |
 | budgets | Monthly limits, spend calculation, threshold checks | BR-09, BR-10 |
 | notifications | In-app and email alerts | BR-10 |
@@ -180,7 +180,7 @@ Ten core tables; every user-owned row carries `user_id` (directly or through its
 | budgets | id, user_id, category_id, month, limit_amount, currency, alerted_80, alerted_100 | Unique (user_id, category_id, month) |
 | audit_log | id, user_id, action, entity, entity_id, metadata, created_at | Append-only |
 
-`dedup_key` = the provider's transaction ID when present; otherwise a SHA-256 of account, booking date, amount and description.
+`dedup_key` = SHA-256 of the provider's transaction ID when present; otherwise of account, booking date, amount and description plus an occurrence number, so identical same-day transactions are both kept. Pending rows the bank stops returning within the sync window are deleted, because a pending transaction often books under a new ID (ADR 0004).
 
 ## Bank connection flow
 
@@ -266,7 +266,8 @@ All bank I/O runs in arq workers, so a slow bank never blocks the UI.
 - Transactions upserted with `INSERT ... ON CONFLICT (account_id, dedup_key) DO UPDATE`; pending to booked updates in place
 - The 3-day overlap catches late-posted transactions without duplicates
 - Retries: 5 attempts, exponential backoff from 30 seconds; 401/403 from the provider → stop and set needs_renewal
-- Failed jobs are recorded and shown as "Sync failed" on the connection
+- Failed jobs are recorded on the connection as `last_sync_status` = `retrying` / `failed` with a short error code, shown in `GET /connections`
+- Disconnect deletes local data immediately; if the provider is unreachable, revocation is queued as a retried `revoke_consent` job
 
 ## Testing, CI/CD and deployment
 

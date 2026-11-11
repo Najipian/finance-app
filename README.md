@@ -2,7 +2,7 @@
 
 A personal finance app built on UK/EU Open Banking. Connect bank accounts through a secure consent flow, see every balance and transaction in one place, get spending auto-categorized, and stay on top of monthly budgets.
 
-> Status: Weeks 1–2 of 6 done. Auth (BR-01), bank connection by consent (BR-02) and accounts across banks (BR-05), with CI/CD.
+> Status: Weeks 1–3 of 6 done. Auth (BR-01), bank consent, renewal and disconnect (BR-02..04), accounts across banks (BR-05), transaction sync without duplicates (BR-06), CI/CD. Build journal: [docs/development-log.md](docs/development-log.md).
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
@@ -11,6 +11,7 @@ A personal finance app built on UK/EU Open Banking. Connect bank accounts throug
 - [Business requirements (BRD)](docs/BRD.md)
 - [Technical design](docs/technical-design.md)
 - [Architecture decision records](docs/adr/)
+- [Development log](docs/development-log.md): every step, decision and fix
 
 ## Stack
 
@@ -43,8 +44,12 @@ Compose runs `alembic upgrade head` (the `migrate` service) before the API and w
 | GET | /api/v1/institutions?country=GB | Bearer | Banks to connect |
 | POST | /api/v1/connections | Bearer | Start bank consent → `authorisation_url` (BR-02) |
 | GET | /api/v1/connections/callback | `state` | Bank redirect target; 303 to the web app |
-| GET | /api/v1/connections | Bearer | Connected banks and status |
+| GET | /api/v1/connections | Bearer | Connected banks, renew banner flag, last sync status |
+| POST | /api/v1/connections/{id}/renew | Bearer | Re-consent (BR-03) |
+| POST | /api/v1/connections/{id}/sync | Bearer | Queue a sync now (202) |
+| DELETE | /api/v1/connections/{id} | Bearer | Disconnect: revoke and delete data (BR-04) |
 | GET | /api/v1/accounts | Bearer | All accounts, balances, totals per currency (BR-05) |
+| GET | /api/v1/transactions | Bearer | Filter by account, dates, status, text; paged (BR-06) |
 | GET | /api/v1/health, /health/ready | — | Liveness / readiness |
 
 ### Try the bank connection offline
