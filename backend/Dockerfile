@@ -2,7 +2,7 @@
 # One image for both the API and the arq worker; docker-compose picks the command.
 
 # ---------------------------------------------------------------- builder
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /bin/uv
 
@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 
 # ---------------------------------------------------------------- runtime
-FROM python:3.12-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 RUN groupadd --system app && useradd --system --gid app --no-create-home app
 
