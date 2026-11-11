@@ -686,3 +686,13 @@ and excluded from the service worker's navigation fallback, so the footer's API 
 link works. Tests: exact subtraction (0.30 − 0.10), compact labels, currency order,
 relative times, category grouping and the over-budget label (20 web tests).
 Checked in the browser at 1280 px and 375 px with Yapily sandbox data.
+
+### Demo video
+
+A walkthrough video (`docs/media/onesum-demo.mp4`, 1 min 37 s, 1280×800) and a poster
+frame (`docs/media/onesum-overview.png`) are linked from the README. Recorded with
+Playwright driving local Chrome against the Docker stack with `BANK_PROVIDER=mock`
+(a throwaway demo user with a random password), desktop then a 390 px phone viewport,
+joined with ffmpeg (H.264, `+faststart` so it streams). The first take showed no budget
+alert: recategorising one Tesco row with "apply to similar" moved all Tesco spending
+out of Groceries, so the script budgets Eating out instead.

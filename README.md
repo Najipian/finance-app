@@ -6,6 +6,12 @@ A personal finance app built on UK/EU Open Banking. Connect bank accounts throug
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
+## Demo
+
+[![Onesum overview: net worth, spending by category, budget alert and 6-month trend](docs/media/onesum-overview.png)](docs/media/onesum-demo.mp4)
+
+**[Watch the 1.5-minute walkthrough](docs/media/onesum-demo.mp4)**: sign up, connect a bank through the consent flow, overview, accounts, transaction search and recategorisation, budgets going over with an alert, bank connections, then the phone layout with its bottom tab bar. Recorded on the local stack with the built-in mock bank, so all data is synthetic.
+
 ## Documents
 
 - [Business requirements (BRD)](docs/BRD.md)
