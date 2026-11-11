@@ -8,6 +8,7 @@ are truncated after each test.
 import os
 import sys
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -65,15 +66,25 @@ def migrated_settings(integration_settings: Settings) -> Settings:
     return integration_settings
 
 
-@pytest.fixture
-async def api(migrated_settings: Settings) -> AsyncIterator[AsyncClient]:
-    """HTTP client for an app running its real lifespan against the containers."""
-    app = create_app(migrated_settings)
+@asynccontextmanager
+async def running_app(settings: Settings) -> AsyncIterator[AsyncClient]:
+    """Run an app with its real lifespan; wipe DB rows and Redis keys afterwards."""
+    app = create_app(settings)
     async with (
         app.router.lifespan_context(app),
         AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
     ):
+        try:
+            yield client
+        finally:
+            async with app.state.sessionmaker() as session:
+                await session.execute(text("TRUNCATE users CASCADE"))
+                await session.commit()
+            await app.state.redis.flushdb()  # rate-limit counters
+
+
+@pytest.fixture
+async def api(migrated_settings: Settings) -> AsyncIterator[AsyncClient]:
+    """HTTP client for an app running against the containers with default settings."""
+    async with running_app(migrated_settings) as client:
         yield client
-        async with app.state.sessionmaker() as session:
-            await session.execute(text("TRUNCATE users CASCADE"))
-            await session.commit()

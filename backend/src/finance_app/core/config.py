@@ -58,6 +58,16 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = Field(default=15, gt=0)
     refresh_token_ttl_days: int = Field(default=7, gt=0)
 
+    # Rate limiting (NFR-02/03, ADR 0002). Fixed windows counted in Redis.
+    rate_limit_enabled: bool = Field(default=True)
+    auth_rate_limit_per_minute: int = Field(
+        default=10, gt=0, description="Requests per minute per client IP, per auth endpoint."
+    )
+    login_account_rate_limit: int = Field(
+        default=5, gt=0, description="Login attempts per account per window, from any IP."
+    )
+    login_account_window_seconds: int = Field(default=900, gt=0)
+
     cors_origins: list[str] = Field(
         default_factory=list,
         description='Allowed web origins as a JSON list, e.g. ["http://localhost:5173"].',

@@ -45,7 +45,7 @@ The API answers the PWA and queues work in Redis; the sync worker is the only pa
 | Auth | PyJWT (access + refresh tokens), argon2-cffi | Standard, auditable |
 | Encryption | cryptography (AESGCM) | Vetted AES-256-GCM implementation |
 | Logging | structlog (JSON in prod) | Structured, searchable logs; no secrets logged |
-| Rate limiting | slowapi | Throttle auth and sync endpoints |
+| Rate limiting | Fixed-window limiter on async Redis (ADR 0002) | Throttle auth and sync endpoints without blocking the event loop |
 | Front end | React + Vite + TypeScript, PWA | Installable on mobile, one codebase |
 | UI and charts | Tailwind CSS, Chart.js | Fast to build, clean charts |
 | Tests | pytest, pytest-asyncio, httpx AsyncClient, respx, testcontainers; Playwright for E2E | Unit, API, contract and end-to-end |
@@ -243,7 +243,7 @@ REST under `/api/v1`, JSON, JWT bearer auth on everything except auth and the ba
 | Data access | Every query scoped by `user_id` from the token; ownership enforced in services, 404 (not 403) for other users' resources |
 | Input | Pydantic validation on every request; SQLAlchemy parameters prevent SQL injection |
 | Transport | HTTPS only, HSTS, security headers middleware, strict CORS to the web origin |
-| Rate limiting | slowapi on auth and sync endpoints |
+| Rate limiting | Async Redis fixed window (ADR 0002): 10/min per IP per auth endpoint; 5 login attempts per 15 min per account (hashed email key); 429 + `Retry-After`; fails open if Redis is down |
 | Logging | No tokens, passwords or full account numbers in logs; IBAN masked to last 4 |
 | Audit | Consent created, renewed, revoked; sync run; data exported or deleted |
 | Supply chain | Dependabot, pip-audit, bandit (via ruff `S` rules) and CodeQL in CI |

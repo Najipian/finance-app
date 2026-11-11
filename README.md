@@ -2,7 +2,7 @@
 
 A personal finance app built on UK/EU Open Banking. Connect bank accounts through a secure consent flow, see every balance and transaction in one place, get spending auto-categorized, and stay on top of monthly budgets.
 
-> Status: Week 1 of 6 (foundations). Backend, Docker stack, migrations, auth (BR-01) and CI/CD in place.
+> Status: Week 1 of 6 complete. Backend, Docker stack, migrations, auth (BR-01) with rate limiting, and CI/CD in place.
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
@@ -83,6 +83,7 @@ GitHub Actions (`.github/workflows/ci.yml`) on every push and PR: ruff + mypy, f
 - Passwords hashed with Argon2id (off the event loop). 15-minute JWT access tokens with a pinned algorithm.
 - Refresh tokens are opaque, stored as SHA-256, single-use, and rotated; replaying a used token revokes the whole session.
 - Login gives the same response and timing for an unknown email and a wrong password.
+- Rate limits on auth endpoints: 10/min per IP, and 5 login attempts per 15 min per account from any IP (429 + `Retry-After`). See [ADR 0002](docs/adr/0002-rate-limiting-on-async-redis.md).
 - No secrets in the repo: `.env` is git-ignored; `.env.example` holds placeholders.
 - The DB password is a `SecretStr` and is masked in logs and reprs.
 - Validation errors never echo submitted values; unexpected errors never leak internals.

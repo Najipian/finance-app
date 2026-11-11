@@ -55,11 +55,13 @@ class DomainError(Exception):
 
     status_code: int = 400
     title: str = "Bad request"
-    headers: ClassVar[dict[str, str]] = {}
+    default_headers: ClassVar[dict[str, str]] = {}
 
     def __init__(self, detail: str | None = None) -> None:
         super().__init__(detail or self.title)
         self.detail = detail
+        # Per-instance copy so one error can add headers (e.g. Retry-After).
+        self.headers: dict[str, str] = dict(self.default_headers)
 
 
 class UnauthorizedError(DomainError):
@@ -67,7 +69,23 @@ class UnauthorizedError(DomainError):
 
     status_code = 401
     title = "Unauthorized"
-    headers: ClassVar[dict[str, str]] = {"WWW-Authenticate": "Bearer"}
+    default_headers: ClassVar[dict[str, str]] = {"WWW-Authenticate": "Bearer"}
+
+
+class RateLimitedError(DomainError):
+    """Too many requests in the current window (HTTP 429).
+
+    Args:
+        retry_after: Seconds until the client may try again; sent as ``Retry-After``.
+    """
+
+    status_code = 429
+    title = "Too many requests"
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__(f"Too many attempts. Try again in {retry_after} seconds.")
+        self.retry_after = retry_after
+        self.headers["Retry-After"] = str(retry_after)
 
 
 class NotFoundError(DomainError):

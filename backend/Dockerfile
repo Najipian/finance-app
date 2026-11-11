@@ -43,4 +43,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2)"]
 
-CMD ["uvicorn", "finance_app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers: behind a reverse proxy, take the client IP from X-Forwarded-For
+# (used by per-IP rate limits). Only proxies in FORWARDED_ALLOW_IPS are trusted;
+# uvicorn's default trusts 127.0.0.1 only. Set it when deploying behind a proxy.
+CMD ["uvicorn", "finance_app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

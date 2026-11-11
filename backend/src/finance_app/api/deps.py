@@ -1,6 +1,6 @@
 """FastAPI dependencies shared by routes (DB session, Redis, settings, current user)."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Annotated, cast
 
 from fastapi import Depends, Request
@@ -9,6 +9,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance_app.core.config import Settings
+from finance_app.core.rate_limit import RateLimit, RateLimiter
 from finance_app.modules.auth.service import AuthService, InvalidTokenError
 from finance_app.modules.users.models import User
 
@@ -57,6 +58,40 @@ def get_app_settings(request: Request) -> Settings:
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 AppSettings = Annotated[Settings, Depends(get_app_settings)]
+
+
+def get_rate_limiter(request: Request) -> RateLimiter:
+    """Return the app-wide rate limiter created at startup."""
+    return cast(RateLimiter, request.app.state.rate_limiter)
+
+
+RateLimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
+
+
+def client_ip(request: Request) -> str:
+    """The client's IP address.
+
+    Behind a reverse proxy this is only correct when uvicorn runs with
+    ``--proxy-headers`` and the proxy is listed in ``FORWARDED_ALLOW_IPS``.
+    """
+    return request.client.host if request.client else "unknown"
+
+
+def limit_per_ip(endpoint: str) -> Callable[..., Awaitable[None]]:
+    """Build a dependency that limits one endpoint per client IP.
+
+    Args:
+        endpoint: Short name used in the Redis key, e.g. ``"login"``.
+
+    Returns:
+        A FastAPI dependency raising ``RateLimitedError`` (429) over the limit.
+    """
+
+    async def dependency(request: Request, limiter: RateLimiterDep, settings: AppSettings) -> None:
+        limit = RateLimit(requests=settings.auth_rate_limit_per_minute, window_seconds=60)
+        await limiter.hit(f"{endpoint}:ip:{client_ip(request)}", limit)
+
+    return dependency
 
 
 def get_auth_service(db: DbSession, settings: AppSettings) -> AuthService:

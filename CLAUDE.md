@@ -17,7 +17,7 @@ Read both before starting a milestone. If a change contradicts them, update the 
 
 ## Current status
 
-**Week 1 in progress.** Repo lives at `D:\finance-app`. Done: git, backend skeleton (uv, ruff/mypy/pytest config), settings, structlog, RFC 9457 error handling, DB base + async session factory, health endpoints (liveness + readiness), arq worker stub, Dockerfile + Compose, Alembic (async; `migrate` one-shot service in Compose), auth BR-01 (register, login, refresh rotation with reuse detection, logout, `GET /me`), pre-commit, GitHub Actions CI (lint, tests, pip-audit, Docker smoke test, GHCR publish on main), CodeQL, Dependabot. Next: rate limiting on auth (slowapi), then Week 2.
+**Week 1 in progress.** Repo lives at `D:\finance-app`. Done: git, backend skeleton (uv, ruff/mypy/pytest config), settings, structlog, RFC 9457 error handling, DB base + async session factory, health endpoints (liveness + readiness), arq worker stub, Dockerfile + Compose, Alembic (async; `migrate` one-shot service in Compose), auth BR-01 (register, login, refresh rotation with reuse detection, logout, `GET /me`), pre-commit, GitHub Actions CI (lint, tests, pip-audit, Docker smoke test, GHCR publish on main), CodeQL, Dependabot, rate limiting on auth endpoints (async Redis fixed window, ADR 0002). Repo on GitHub: Najipian/finance-app. **Week 1 complete.** Next: Week 2.
 
 1. Week 1 — repo skeleton, `pyproject.toml` (uv), ruff/mypy/pytest config, pre-commit, Docker + Compose (api, Postgres, Redis), settings, DB session, Alembic, health endpoint, auth (BR-01), CI workflow, README.
 2. Week 2 — `BankProvider` protocol, mock provider, Yapily sandbox adapter, consent flow, accounts and balances (BR-02, BR-05).
@@ -30,7 +30,7 @@ Keep this section updated as milestones complete.
 
 ## Stack (backend)
 
-Python 3.12+, FastAPI, Pydantic v2 + pydantic-settings, SQLAlchemy 2.0 async + asyncpg, Alembic, PostgreSQL 16, Redis + arq, httpx + tenacity, PyJWT, argon2-cffi, cryptography (AESGCM), structlog, slowapi. Tooling: uv, ruff, mypy --strict, pytest (+ pytest-asyncio, respx, testcontainers), pre-commit. Front end later: React + Vite + TypeScript PWA in `web/`.
+Python 3.12+, FastAPI, Pydantic v2 + pydantic-settings, SQLAlchemy 2.0 async + asyncpg, Alembic, PostgreSQL 16, Redis + arq, httpx + tenacity, PyJWT, argon2-cffi, cryptography (AESGCM), structlog, rate limiting via `core/rate_limit.py` on async Redis (ADR 0002, replaces slowapi). Tooling: uv, ruff, mypy --strict, pytest (+ pytest-asyncio, respx, testcontainers), pre-commit. Front end later: React + Vite + TypeScript PWA in `web/`.
 
 Do not swap core libraries without an ADR.
 

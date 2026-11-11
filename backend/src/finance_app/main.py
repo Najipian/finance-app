@@ -18,6 +18,7 @@ from finance_app.api.router import api_router
 from finance_app.core.config import Settings, get_settings
 from finance_app.core.errors import register_exception_handlers
 from finance_app.core.logging import configure_logging
+from finance_app.core.rate_limit import RateLimiter
 from finance_app.db.session import create_engine, create_sessionmaker
 
 log = structlog.get_logger(__name__)
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     redis: Redis = Redis.from_url(settings.redis_url)
     app.state.sessionmaker = create_sessionmaker(engine)
     app.state.redis = redis
+    app.state.rate_limiter = RateLimiter(redis, enabled=settings.rate_limit_enabled)
     log.info("startup", environment=settings.environment.value, version=__version__)
     try:
         yield
