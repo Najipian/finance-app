@@ -18,6 +18,13 @@ class TransactionStatus(StrEnum):
     PENDING = "pending"
 
 
+class CategorySource(StrEnum):
+    """Who set a transaction's category. Rules never overwrite a manual choice."""
+
+    RULE = "rule"
+    MANUAL = "manual"
+
+
 class Transaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A bank transaction. ``(account_id, dedup_key)`` is unique, so syncs never duplicate.
 
@@ -47,5 +54,18 @@ class Transaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             create_constraint=True,
             values_callable=lambda e: [m.value for m in e],
             name="transaction_status",
+        )
+    )
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), index=True
+    )
+    category_source: Mapped[CategorySource | None] = mapped_column(
+        Enum(
+            CategorySource,
+            native_enum=False,
+            length=10,
+            create_constraint=True,
+            values_callable=lambda e: [m.value for m in e],
+            name="category_source",
         )
     )

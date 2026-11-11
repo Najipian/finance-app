@@ -6,16 +6,22 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from finance_app.modules.accounts.models import Account
 from finance_app.modules.connections.models import BankConnection
-from finance_app.modules.transactions.models import Transaction, TransactionStatus
+from finance_app.modules.transactions.models import (
+    CategorySource,
+    Transaction,
+    TransactionStatus,
+)
 from finance_app.providers.base import ProviderTransaction
 
 CENT = Decimal("0.01")
+CARRY_OVER_DAYS = 7  # how long a pending transaction may take to book
 UPSERT_BATCH = 500
 _UPDATABLE = (
     "provider_transaction_id",
@@ -82,6 +88,42 @@ class TransactionRepository:
                 )
             )
 
+    async def carry_manual_categories(
+        self, account_id: uuid.UUID, date_from: date, keep_keys: Sequence[str]
+    ) -> int:
+        """Copy hand-set categories from stale pending rows to their booked versions.
+
+        Runs before ``delete_stale_pending``: when a pending transaction books under a
+        new ID, the user's manual category would otherwise be lost (ADR 0004). The
+        booked row must be on the same account with the same amount and description,
+        booked within ``CARRY_OVER_DAYS``, and not already set by hand.
+
+        Returns:
+            Number of booked rows that received a category.
+        """
+        pending = aliased(Transaction)
+        conditions = [
+            pending.account_id == account_id,
+            pending.status == TransactionStatus.PENDING,
+            pending.booking_date >= date_from,
+            pending.category_source == CategorySource.MANUAL,
+            Transaction.account_id == pending.account_id,
+            Transaction.status == TransactionStatus.BOOKED,
+            Transaction.amount == pending.amount,
+            Transaction.description == pending.description,
+            Transaction.booking_date >= pending.booking_date,
+            Transaction.booking_date <= pending.booking_date + CARRY_OVER_DAYS,
+            Transaction.category_source.is_distinct_from(CategorySource.MANUAL),
+        ]
+        if keep_keys:
+            conditions.append(pending.dedup_key.not_in(keep_keys))
+        result = await self._session.execute(
+            update(Transaction)
+            .where(*conditions)
+            .values(category_id=pending.category_id, category_source=CategorySource.MANUAL)
+        )
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
     async def delete_stale_pending(
         self, account_id: uuid.UUID, date_from: date, keep_keys: Sequence[str]
     ) -> int:
@@ -102,6 +144,18 @@ class TransactionRepository:
             statement = statement.where(Transaction.dedup_key.not_in(keep_keys))
         result = await self._session.execute(statement)
         return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
+    async def get_for_user(
+        self, transaction_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Transaction | None:
+        """A transaction only if it belongs to the user."""
+        result = await self._session.execute(
+            select(Transaction)
+            .join(Account, Transaction.account_id == Account.id)
+            .join(BankConnection, Account.connection_id == BankConnection.id)
+            .where(Transaction.id == transaction_id, BankConnection.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
 
     async def list_for_user(
         self, user_id: uuid.UUID, filters: TransactionFilter, *, limit: int, offset: int

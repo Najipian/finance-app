@@ -6,11 +6,16 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from finance_app.api.deps import CurrentUser, TransactionServiceDep
+from finance_app.api.deps import CategoryServiceDep, CurrentUser, TransactionServiceDep
 from finance_app.core.errors import problem
 from finance_app.modules.transactions.models import TransactionStatus
 from finance_app.modules.transactions.repository import TransactionFilter
-from finance_app.modules.transactions.schemas import TransactionPage
+from finance_app.modules.transactions.schemas import (
+    RecategorizeRequest,
+    RecategorizeResult,
+    TransactionPage,
+    TransactionRead,
+)
 
 router = APIRouter(tags=["transactions"])
 
@@ -46,3 +51,34 @@ async def list_transactions(
         text=q,
     )
     return await service.list(user.id, filters, limit=limit, offset=offset)
+
+
+@router.patch(
+    "/transactions/{transaction_id}",
+    summary="Change a transaction's category",
+    description=(
+        "Sets the category by hand (rules never override it). With `apply_to_similar`, "
+        "also creates a rule from this transaction's merchant (or description) and applies "
+        "it to past and future transactions (BR-08)."
+    ),
+    response_model=RecategorizeResult,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: problem("Missing, invalid or expired token."),
+        status.HTTP_404_NOT_FOUND: problem("No such transaction or category."),
+    },
+)
+async def recategorize(
+    transaction_id: uuid.UUID,
+    body: RecategorizeRequest,
+    user: CurrentUser,
+    service: CategoryServiceDep,
+) -> RecategorizeResult:
+    """Change a transaction's category."""
+    transaction, rule_id, changed = await service.recategorize_transaction(
+        user.id, transaction_id, body.category_id, apply_to_similar=body.apply_to_similar
+    )
+    return RecategorizeResult(
+        transaction=TransactionRead.model_validate(transaction),
+        rule_id=rule_id,
+        similar_updated=changed,
+    )

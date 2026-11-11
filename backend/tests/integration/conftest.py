@@ -85,7 +85,9 @@ async def running_app(settings: Settings) -> AsyncIterator[AsyncClient]:
             yield client
         finally:
             async with app.state.sessionmaker() as session:
-                await session.execute(text("TRUNCATE users CASCADE"))
+                # Row-level cascade: TRUNCATE ... CASCADE would also empty whole
+                # referencing tables, wiping the seeded default categories and rules.
+                await session.execute(text("DELETE FROM users"))
                 await session.commit()
             await app.state.redis.flushdb()  # rate-limit counters
 

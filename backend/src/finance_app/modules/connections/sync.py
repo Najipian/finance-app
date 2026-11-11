@@ -37,8 +37,9 @@ log = structlog.get_logger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class SyncResult:
-    """What one sync changed."""
+    """What one sync changed, and whose data it was."""
 
+    user_id: uuid.UUID
     accounts: int
     transactions: int
     stale_pending_removed: int
@@ -131,13 +132,19 @@ class ConnectionSyncService:
             )
             keys = dedup_keys(account_id, txs)
             await self._transactions.upsert_many(account_id, txs, keys)
+            await self._transactions.carry_manual_categories(account_id, date_from, keys)
             removed += await self._transactions.delete_stale_pending(
                 account_id,
                 date_from,
                 keys,
             )
             transactions += len(txs)
-        return SyncResult(len(accounts), transactions, removed)
+        return SyncResult(
+            user_id=connection.user_id,
+            accounts=len(accounts),
+            transactions=transactions,
+            stale_pending_removed=removed,
+        )
 
     async def _mark_consent_expired(self, connection: BankConnection) -> None:
         connection.status = ConnectionStatus.NEEDS_RENEWAL

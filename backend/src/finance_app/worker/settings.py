@@ -6,7 +6,8 @@ DB engine, provider client, cipher and job queue, built in ``startup`` from sett
 
 Jobs (technical design, "Background jobs and sync"):
 
-- ``sync_connection``: accounts, balances, transactions. Transient provider errors
+- ``sync_connection``: accounts, balances, transactions, then categorisation and
+  budget alerts (BR-07, BR-10). Transient provider errors
   are retried with exponential backoff (30 s, 60 s, 120 s, 240 s); after the last
   try the connection shows ``failed`` (NFR-07).
 - ``revoke_consent``: revoke at the provider after a disconnect, retried.
@@ -22,6 +23,7 @@ import structlog
 from arq import cron
 from arq.connections import RedisSettings
 from arq.worker import Retry
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from finance_app.core.config import Settings, get_settings
 from finance_app.core.crypto import TokenCipher
@@ -33,6 +35,8 @@ from finance_app.core.logging import configure_logging
 # can't be resolved when a job first touches the database.
 from finance_app.db import registry  # noqa: F401
 from finance_app.db.session import create_engine, create_sessionmaker
+from finance_app.modules.budgets.service import BudgetService
+from finance_app.modules.categories.categorize import CategorizationService
 from finance_app.modules.connections.lifecycle import ConsentLifecycleService
 from finance_app.modules.connections.sync import ConnectionSyncService
 from finance_app.providers.base import ProviderError
@@ -94,11 +98,27 @@ async def sync_connection(ctx: dict[str, Any], connection_id: str) -> dict[str, 
             raise Retry(defer=retry_delay(job_try)) from exc
     if result is None:
         return None
+    async with ctx["sessionmaker"]() as session:
+        categorized, alerts = await after_sync(session, result.user_id)
     return {
         "accounts": result.accounts,
         "transactions": result.transactions,
         "stale_pending_removed": result.stale_pending_removed,
+        "categorized": categorized,
+        "budget_alerts": alerts,
     }
+
+
+async def after_sync(session: AsyncSession, user_id: uuid.UUID) -> tuple[int, int]:
+    """Categorise new transactions, then send any budget alerts now due (BR-07, BR-10).
+
+    Returns:
+        Transactions categorised and alerts created.
+    """
+    categorized = await CategorizationService(session).categorize_new(user_id)
+    alerts = await BudgetService(session).check_alerts(user_id, datetime.now(UTC).date())
+    await session.commit()
+    return categorized, alerts
 
 
 async def revoke_consent(ctx: dict[str, Any], provider_name: str, consent_id: str) -> bool:

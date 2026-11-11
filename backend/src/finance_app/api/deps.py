@@ -14,8 +14,11 @@ from finance_app.core.jobs import JobQueue
 from finance_app.core.rate_limit import RateLimit, RateLimiter
 from finance_app.modules.accounts.service import AccountService
 from finance_app.modules.auth.service import AuthService, InvalidTokenError
+from finance_app.modules.budgets.service import BudgetService
+from finance_app.modules.categories.service import CategoryService
 from finance_app.modules.connections.service import ConnectionService
 from finance_app.modules.connections.state import ConsentStateStore
+from finance_app.modules.notifications.service import NotificationService
 from finance_app.modules.transactions.service import TransactionService
 from finance_app.modules.users.models import User
 from finance_app.providers.base import BankProvider
@@ -165,3 +168,27 @@ def get_transaction_service(db: DbSession) -> TransactionService:
 
 
 TransactionServiceDep = Annotated[TransactionService, Depends(get_transaction_service)]
+
+
+def get_category_service(db: DbSession) -> CategoryService:
+    """Build the category service for this request."""
+    return CategoryService(db)
+
+
+CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]
+
+
+def get_budget_service(db: DbSession) -> BudgetService:
+    """Build the budget service for this request."""
+    return BudgetService(db)
+
+
+BudgetServiceDep = Annotated[BudgetService, Depends(get_budget_service)]
+
+
+def get_notification_service(db: DbSession) -> NotificationService:
+    """Build the notification service for this request."""
+    return NotificationService(db)
+
+
+NotificationServiceDep = Annotated[NotificationService, Depends(get_notification_service)]
