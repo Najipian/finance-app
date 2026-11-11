@@ -36,3 +36,12 @@ updates:
     groups:
       web-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # openapi-typescript needs the TypeScript JS API, which TypeScript 7 (native)
+      # no longer ships (ADR 0005). Revisit when openapi-typescript supports it.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Node type definitions must match the Node runtime (24 in CI and Docker),
+      # or code could use APIs that don't exist at runtime.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
