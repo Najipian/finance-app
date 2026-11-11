@@ -67,8 +67,9 @@ With `BANK_PROVIDER=mock` (the default), `POST /api/v1/connections` with
 `{"institution_id": "mock-bank-uk"}` returns an `authorisation_url` to a demo bank
 page. Open it in a browser and click **Approve**: you are redirected through the
 callback, the worker fetches accounts, and `GET /api/v1/accounts` shows them.
-Set `BANK_PROVIDER=yapily` with sandbox credentials from console.yapily.com to use
-real sandbox banks. See [ADR 0003](docs/adr/0003-bank-consent-flow.md) for the flow.
+Set `BANK_PROVIDER=yapily` with sandbox credentials from console.yapily.com, add
+**Modelo Sandbox** to your Yapily application, and connect it (bank login `mits` / `mits`,
+Yapily's public test user). Verified end to end: see the development log. See [ADR 0003](docs/adr/0003-bank-consent-flow.md) for the flow.
 
 ### Web app (React PWA)
 

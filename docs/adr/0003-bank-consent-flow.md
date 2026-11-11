@@ -34,8 +34,9 @@ first stored in Week 2.
 
 ## Consequences
 
-- To verify against the Yapily sandbox (not possible without credentials when this
-  was written): the exact name of the one-time-token callback parameter (assumed
+- **Verified against the Yapily sandbox on 2026-11-11 (Modelo Sandbox):** the state
+  survives the redirect and the parameter is `one-time-token`; see the development
+  log. Originally open, before sandbox credentials: the exact name of the one-time-token callback parameter (assumed
   `one-time-token`, matching Yapily's other callback parameters), and that Yapily
   preserves our `state` query parameter when appending its own. If it does not,
   switch to `forwardParameters` or carry the state in the callback path.

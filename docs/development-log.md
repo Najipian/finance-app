@@ -630,3 +630,32 @@ and sign-in page, the mock bank's consent text, the API title in `/docs` and
 `finance-app` repository and folder, the `finance_app` Python package and the npm
 package name. Renaming those is a large, risky diff with no visible benefit (GitHub
 keeps the repository URL either way).
+
+---
+
+## Yapily sandbox verification (closes the open item from Week 2)
+
+Connected **Modelo Sandbox** through the real web app with Yapily credentials (in the
+git-ignored `.env`), signing in at the bank's own page. Three things only the real
+sandbox could show:
+
+| Step | Found | Fix |
+| --- | --- | --- |
+| Setup | Yapily returned 0 institutions: a new sandbox application has none until one is added in the Console (Modelo Sandbox is a pre-configured institution, no Save button) | Console step, no code |
+| Consent exchange | `POST /consent-one-time-token` succeeded but the app reported "couldn't be completed": the adapter required the usual `data` envelope | Accept the Consent object bare or wrapped; failed consents now log a reason naming response *fields* only, never values |
+| Transactions | `400` "The before date cannot be in the future": `before` was end of today, and even "now" failed because our clock runs seconds ahead of Yapily's | Cap `before` at now minus 2 minutes (the next sync's 3-day overlap covers the gap) |
+| Transactions | A 365-day request took 24-28 s per page and timed out at 15 s; 30 days took 1.4-3.1 s | Fetch in 31-day windows, each paged |
+
+Confirmed against the sandbox: our `state` survives the bank redirect, and the
+callback parameter is `one-time-token` (the two open questions of ADR 0003).
+
+**Result:** consent granted; 3 accounts (current, loan, credit card) with balances and
+masked numbers; 23,555 transactions for 12 months in 44 requests and 132 s; no
+duplicates (rows = distinct dedup keys = distinct Yapily IDs); dashboard 32 ms,
+first transactions page 48 ms and a text search 112 ms at that volume (NFR-08). Modelo's
+test data marks every transaction `PENDING` and uses random descriptions, so few match
+the UK keyword rules (53 categorised); real banks send merchant names.
+
+Each fix has a contract test from the real response shape (bare Consent object,
+fields-not-values error message, `before` never in the future, monthly windows):
+114 unit tests passing.
