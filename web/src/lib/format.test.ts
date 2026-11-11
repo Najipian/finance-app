@@ -41,8 +41,9 @@ describe("dashboard helpers", () => {
   });
 
   it("formats chart axis labels compactly so outliers stay readable", () => {
-    expect(formatCompactMoney(1200, "GBP")).toBe("£1.2K");
-    expect(formatCompactMoney(30_000_000, "GBP")).toBe("£30M");
+    // ICU versions differ on the suffix case ("K" vs "k"), so compare case-insensitively.
+    expect(formatCompactMoney(1200, "GBP")).toMatch(/^£1\.2k$/i);
+    expect(formatCompactMoney(30_000_000, "GBP")).toMatch(/^£30m$/i);
     expect(formatCompactMoney(0, "GBP")).toBe("£0");
   });
 
