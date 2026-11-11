@@ -6,10 +6,12 @@ back to the callback with a one-time token, or with an error on cancel.
 Accounts and balances are deterministic per institution.
 """
 
+import random
 import secrets
 from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import Literal
 from urllib.parse import urlencode
 
 from pydantic import SecretStr
@@ -23,6 +25,7 @@ from finance_app.providers.base import (
     ProviderAuthError,
     ProviderBalance,
     ProviderError,
+    ProviderTransaction,
     mask_account_number,
 )
 
@@ -157,3 +160,96 @@ class MockProvider:
                     for t, a in balances.items()
                 ]
         raise ProviderError(f"unknown account {account_id}")
+
+    async def get_transactions(
+        self, consent_token: str, account_id: str, date_from: date, date_to: date
+    ) -> list[ProviderTransaction]:
+        """Deterministic demo transactions; the last two days are pending.
+
+        A pending transaction gets a new ID (``p-`` → ``b-``) once it books, as with
+        many real banks, which exercises the sync's pending-cleanup logic.
+        """
+        institution = _institution_from_token(consent_token, _CONSENT_PREFIX)
+        account = next((a for a in _ACCOUNTS[institution] if a[0] == account_id), None)
+        if account is None:
+            raise ProviderError(f"unknown account {account_id}")
+        currency, account_type = account[3], account[2]
+        today = datetime.now(UTC).date()
+        result: list[ProviderTransaction] = []
+        day = max(date_from, today - timedelta(days=MOCK_HISTORY_DAYS))
+        while day <= min(date_to, today):
+            result.extend(_mock_day(account_id, account_type, currency, day, today))
+            day += timedelta(days=1)
+        return result
+
+    async def revoke_consent(self, consent_id: str) -> None:
+        """Nothing to revoke for demo consents."""
+        if not consent_id:
+            raise ProviderError("missing consent id")
+
+
+MOCK_HISTORY_DAYS = 400
+PENDING_DAYS = 2
+_MERCHANTS: tuple[tuple[str, str, int, int], ...] = (
+    # (merchant, description, min pence, max pence)
+    ("Tesco", "TESCO STORES 2041", 450, 8900),
+    ("Pret A Manger", "PRET A MANGER LONDON", 280, 1450),
+    ("TfL", "TFL TRAVEL CHARGE", 175, 1260),
+    ("Netflix", "NETFLIX.COM", 1099, 1099),
+    ("Deliveroo", "DELIVEROO", 1500, 4200),
+    ("Amazon", "AMAZON MKTPLACE", 699, 6499),
+    ("Shell", "SHELL KINGS CROSS", 3000, 7500),
+    ("Boots", "BOOTS 1123", 350, 2800),
+)
+
+
+def _mock_day(
+    account_id: str, account_type: str, currency: str, day: date, today: date
+) -> list[ProviderTransaction]:
+    """Transactions for one account on one day, the same on every call."""
+    rng = random.Random(f"{account_id}:{day.isoformat()}")  # noqa: S311 - demo data, not security
+    pending = day > today - timedelta(days=PENDING_DAYS)
+    prefix = "p" if pending else "b"
+    status: Literal["booked", "pending"] = "pending" if pending else "booked"
+    rows: list[ProviderTransaction] = []
+    if account_type == "SAVINGS":
+        if day.day == 1:
+            rows.append(
+                ProviderTransaction(
+                    provider_transaction_id=f"{prefix}-{account_id}-{day}-0",
+                    booking_date=day,
+                    amount=Decimal("250.00"),
+                    currency=currency,
+                    description="TRANSFER FROM CURRENT",
+                    merchant=None,
+                    status=status,
+                )
+            )
+        return rows
+    if day.day == 25 and account_type == "CURRENT":
+        rows.append(
+            ProviderTransaction(
+                provider_transaction_id=f"{prefix}-{account_id}-{day}-salary",
+                booking_date=day,
+                amount=Decimal("2850.00"),
+                currency=currency,
+                description="ACME LTD SALARY",
+                merchant="Acme Ltd",
+                status=status,
+            )
+        )
+    for index in range(rng.randint(0, 3)):
+        merchant, description, low, high = rng.choice(_MERCHANTS)
+        pence = rng.randint(low, high)
+        rows.append(
+            ProviderTransaction(
+                provider_transaction_id=f"{prefix}-{account_id}-{day}-{index}",
+                booking_date=day,
+                amount=-(Decimal(pence) / 100),
+                currency=currency,
+                description=description,
+                merchant=merchant,
+                status=status,
+            )
+        )
+    return rows

@@ -19,10 +19,11 @@ STATE_BYTES = 32
 
 @dataclass(frozen=True, slots=True)
 class StateBinding:
-    """Who started a consent flow, and for which pending connection."""
+    """Who started a consent flow, for which connection, and whether it renews one."""
 
     user_id: uuid.UUID
     connection_id: uuid.UUID
+    renew: bool = False
 
 
 class ConsentStateStore:
@@ -41,7 +42,11 @@ class ConsentStateStore:
         """Create a new state bound to a user and connection."""
         state = secrets.token_urlsafe(STATE_BYTES)
         payload = json.dumps(
-            {"user_id": str(binding.user_id), "connection_id": str(binding.connection_id)}
+            {
+                "user_id": str(binding.user_id),
+                "connection_id": str(binding.connection_id),
+                "renew": binding.renew,
+            }
         )
         await self._redis.set(f"{KEY_PREFIX}:{state}", payload, ex=self._ttl)
         return state
@@ -55,5 +60,7 @@ class ConsentStateStore:
             return None
         data = json.loads(raw)
         return StateBinding(
-            user_id=uuid.UUID(data["user_id"]), connection_id=uuid.UUID(data["connection_id"])
+            user_id=uuid.UUID(data["user_id"]),
+            connection_id=uuid.UUID(data["connection_id"]),
+            renew=bool(data.get("renew", False)),
         )

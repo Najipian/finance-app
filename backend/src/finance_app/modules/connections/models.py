@@ -19,6 +19,14 @@ class ConnectionStatus(StrEnum):
     REVOKED = "revoked"
 
 
+class SyncStatus(StrEnum):
+    """Result of the latest sync attempt."""
+
+    OK = "ok"
+    RETRYING = "retrying"  # transient failure, a retry is scheduled
+    FAILED = "failed"  # retries exhausted
+
+
 class BankConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A user's consent-based link to one bank through a provider.
 
@@ -49,3 +57,16 @@ class BankConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     provider_consent_id: Mapped[str | None] = mapped_column(String(255))
     consent_expires_at: Mapped[datetime | None]
     last_synced_at: Mapped[datetime | None]
+    # Outcome of the most recent sync attempt, shown to the user (NFR-07).
+    last_sync_status: Mapped[SyncStatus | None] = mapped_column(
+        Enum(
+            SyncStatus,
+            native_enum=False,
+            length=10,
+            create_constraint=True,
+            values_callable=lambda e: [m.value for m in e],
+            name="sync_status",
+        )
+    )
+    last_sync_error: Mapped[str | None] = mapped_column(String(64))
+    last_sync_attempt_at: Mapped[datetime | None]

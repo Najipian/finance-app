@@ -16,6 +16,7 @@ from finance_app.modules.accounts.service import AccountService
 from finance_app.modules.auth.service import AuthService, InvalidTokenError
 from finance_app.modules.connections.service import ConnectionService
 from finance_app.modules.connections.state import ConsentStateStore
+from finance_app.modules.transactions.service import TransactionService
 from finance_app.modules.users.models import User
 from finance_app.providers.base import BankProvider
 
@@ -156,3 +157,11 @@ def get_account_service(db: DbSession) -> AccountService:
 
 
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
+
+
+def get_transaction_service(db: DbSession) -> TransactionService:
+    """Build the transaction service for this request."""
+    return TransactionService(db)
+
+
+TransactionServiceDep = Annotated[TransactionService, Depends(get_transaction_service)]

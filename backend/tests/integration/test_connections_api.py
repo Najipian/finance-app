@@ -20,8 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from finance_app.core.config import Settings
 from finance_app.core.crypto import TokenCipher
 from finance_app.modules.accounts.models import Account
-from finance_app.modules.accounts.sync import AccountSyncService
 from finance_app.modules.connections.models import BankConnection, ConnectionStatus
+from finance_app.modules.connections.sync import ConnectionSyncService
 from finance_app.providers.mock import MockProvider
 from tests.integration.conftest import run_worker_burst
 
@@ -231,10 +231,12 @@ async def test_sync_is_idempotent_br05(
     await _connect(api, headers, "mock-bank-uk")
     connection = (await db.execute(select(BankConnection))).scalar_one()
     cipher = TokenCipher(migrated_settings.encryption_keys(), 1)
-    service = AccountSyncService(db, MockProvider(migrated_settings.public_api_url), cipher)
+    service = ConnectionSyncService(db, MockProvider(migrated_settings.public_api_url), cipher)
 
-    assert await service.sync_connection(connection.id) == 2
-    assert await service.sync_connection(connection.id) == 2
+    first = await service.sync(connection.id)
+    second = await service.sync(connection.id)
+    assert first is not None and second is not None
+    assert first.accounts == second.accounts == 2
 
     assert (await db.execute(select(func.count()).select_from(Account))).scalar() == 2
 
@@ -261,8 +263,8 @@ async def test_expired_consent_marks_connection_needs_renewal(
     db.add(connection)
     await db.commit()
 
-    service = AccountSyncService(db, MockProvider(migrated_settings.public_api_url), cipher)
-    assert await service.sync_connection(connection.id) == 0
+    service = ConnectionSyncService(db, MockProvider(migrated_settings.public_api_url), cipher)
+    assert await service.sync(connection.id) is None
 
     await db.refresh(connection)
     assert connection.status is ConnectionStatus.NEEDS_RENEWAL

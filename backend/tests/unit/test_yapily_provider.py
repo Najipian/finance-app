@@ -5,6 +5,7 @@ Payloads follow the shapes in Yapily's API reference (docs.yapily.com).
 
 import json
 from collections.abc import AsyncIterator
+from datetime import date
 from decimal import Decimal
 
 import httpx
@@ -263,3 +264,89 @@ async def test_from_settings_builds_an_authenticated_client() -> None:
         assert provider.name == "yapily"
     finally:
         await provider.aclose()
+
+
+# ---------------------------------------------------------------- transactions and revoke (Week 3)
+
+
+def _page(items: list[str], total: int) -> httpx.Response:
+    body = f'{{"meta": {{"pagination": {{"totalCount": {total}}}}}, "data": [{",".join(items)}]}}'
+    return _json(body)
+
+
+_BOOKED = """{"id": "tx-1", "bookingDateTime": "2026-11-09T10:00:00Z", "status": "BOOKED",
+  "amount": -100.23, "currency": "GBP",
+  "transactionAmount": {"amount": -100.23, "currency": "GBP"},
+  "description": "TESCO STORES 2041", "merchant": {"merchantName": "Tesco"}}"""
+_PENDING = """{"id": "tx-2", "date": "2026-11-11T08:00:00Z", "status": "PENDING",
+  "amount": -3.2, "currency": "GBP", "transactionInformation": ["PRET", "A MANGER"]}"""
+_CREDIT = """{"bookingDateTime": "2026-11-01T00:00:00Z", "status": "BOOKED",
+  "transactionAmount": {"amount": 2850.00, "currency": "GBP"}, "reference": "SALARY"}"""
+
+
+@respx.mock
+async def test_transactions_are_paged_and_mapped_br06(
+    yapily: YapilyProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("finance_app.providers.yapily.TRANSACTIONS_PAGE_SIZE", 2)
+    route = respx.get(f"{BASE}/accounts/acc-1/transactions").mock(
+        side_effect=[_page([_BOOKED, _PENDING], total=3), _page([_CREDIT], total=3)]
+    )
+
+    txs = await yapily.get_transactions("consent", "acc-1", date(2026, 11, 1), date(2026, 11, 11))
+
+    assert [
+        (t.provider_transaction_id, t.amount, t.status, t.description, t.merchant) for t in txs
+    ] == [
+        ("tx-1", Decimal("-100.23"), "booked", "TESCO STORES 2041", "Tesco"),
+        ("tx-2", Decimal("-3.2"), "pending", "PRET A MANGER", None),
+        (None, Decimal("2850.00"), "booked", "SALARY", None),
+    ]
+    assert txs[1].booking_date == date(2026, 11, 11)
+    first, second = (call.request.url.params for call in route.calls)
+    assert first["from"] == "2026-11-01T00:00:00.000Z"
+    assert first["before"] == "2026-11-11T23:59:59.999Z"
+    assert (first["offset"], second["offset"]) == ("0", "2")
+    assert route.calls.last.request.headers["consent"] == "consent"
+
+
+@respx.mock
+async def test_single_short_page_stops_paging(yapily: YapilyProvider) -> None:
+    route = respx.get(f"{BASE}/accounts/acc-1/transactions").mock(
+        return_value=_json('{"data": []}')
+    )
+
+    assert await yapily.get_transactions("c", "acc-1", date(2026, 1, 1), date(2026, 1, 2)) == []
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_transaction_without_amount_is_rejected(yapily: YapilyProvider) -> None:
+    respx.get(f"{BASE}/accounts/a/transactions").mock(
+        return_value=_json('{"data": [{"id": "x", "bookingDateTime": "2026-11-01T00:00:00Z"}]}')
+    )
+
+    with pytest.raises(ProviderError):
+        await yapily.get_transactions("c", "a", date(2026, 11, 1), date(2026, 11, 2))
+
+
+@respx.mock
+async def test_revoke_consent_deletes_and_retries_br04(yapily: YapilyProvider) -> None:
+    route = respx.delete(f"{BASE}/consents/consent-1").mock(
+        side_effect=[
+            httpx.Response(503),
+            httpx.Response(200, json={"data": {"id": "consent-1", "deleteStatus": "SUCCESS"}}),
+        ]
+    )
+
+    await yapily.revoke_consent("consent-1")
+
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_failed_revocation_is_an_error(yapily: YapilyProvider) -> None:
+    respx.delete(f"{BASE}/consents/c").respond(200, json={"data": {"deleteStatus": "FAILED"}})
+
+    with pytest.raises(ProviderError):
+        await yapily.revoke_consent("c")

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from finance_app.core.config import Settings
 from finance_app.core.crypto import TokenCipher
-from finance_app.core.errors import DomainError, NotFoundError
+from finance_app.core.errors import ConflictError, DomainError, NotFoundError
 from finance_app.core.jobs import JobQueue
 from finance_app.modules.connections.models import BankConnection, ConnectionStatus
 from finance_app.modules.connections.repository import ConnectionRepository
@@ -32,6 +32,8 @@ from finance_app.providers.base import (
 )
 
 log = structlog.get_logger(__name__)
+
+_RENEWABLE = {ConnectionStatus.ACTIVE, ConnectionStatus.NEEDS_RENEWAL}
 
 
 class ProviderUnavailableError(DomainError):
@@ -138,12 +140,10 @@ class ConnectionService:
         )
         self._connections.add(connection)
         state = await self._states.issue(StateBinding(user_id, connection.id))
-        callback = (
-            f"{self._settings.public_api_url.rstrip('/')}/api/v1/connections/callback?"
-            + urlencode({"state": state})
-        )
         try:
-            consent = await self._provider.create_consent(str(user_id), institution.id, callback)
+            consent = await self._provider.create_consent(
+                str(user_id), institution.id, self._callback_url(state)
+            )
         except ProviderError as exc:
             await self._session.rollback()
             log.warning("provider_error", operation="create_consent", error=str(exc))
@@ -153,7 +153,7 @@ class ConnectionService:
         return connection, consent.authorisation_url
 
     async def complete(self, callback_params: Mapping[str, str]) -> CallbackResult:
-        """Finish a consent from the bank's redirect.
+        """Finish a consent (new connection or renewal) from the bank's redirect.
 
         Args:
             callback_params: All query parameters of the callback request.
@@ -167,24 +167,29 @@ class ConnectionService:
             log.warning("consent_state_invalid")
             return CallbackResult(CallbackOutcome.INVALID_STATE)
         connection = await self._connections.get_for_user(binding.connection_id, binding.user_id)
-        if connection is None or connection.status is not ConnectionStatus.PENDING:
+        expected = _RENEWABLE if binding.renew else {ConnectionStatus.PENDING}
+        if connection is None or connection.status not in expected:
             log.warning("consent_state_stale", connection_id=str(binding.connection_id))
             return CallbackResult(CallbackOutcome.INVALID_STATE)
 
         provider_params = {k: v for k, v in callback_params.items() if k != "state"}
         try:
             consent = await self._provider.complete_consent(provider_params)
-        except ConsentRejectedError as exc:
-            await self._connections.delete(connection)
-            await self._session.commit()
-            log.info("consent_cancelled", connection_id=str(connection.id), reason=exc.reason)
-            return CallbackResult(CallbackOutcome.CANCELLED, connection.id)
         except ProviderError as exc:
-            await self._connections.delete(connection)
-            await self._session.commit()
-            log.warning("consent_failed", connection_id=str(connection.id), error=str(exc))
-            return CallbackResult(CallbackOutcome.ERROR, connection.id)
+            outcome = (
+                CallbackOutcome.CANCELLED
+                if isinstance(exc, ConsentRejectedError)
+                else CallbackOutcome.ERROR
+            )
+            if not binding.renew:
+                # A new connection that was never approved: keep nothing (US-01).
+                await self._connections.delete(connection)
+                await self._session.commit()
+            # A cancelled renewal leaves the existing connection and its data alone.
+            log.info("consent_not_granted", connection_id=str(connection.id), outcome=outcome)
+            return CallbackResult(outcome, connection.id)
 
+        superseded_consent_id = connection.provider_consent_id if binding.renew else None
         connection.consent_token_enc = self._cipher.encrypt(
             consent.consent_token.get_secret_value(), associated_data=connection.id.bytes
         )
@@ -192,9 +197,89 @@ class ConnectionService:
         connection.consent_expires_at = consent.expires_at
         connection.status = ConnectionStatus.ACTIVE
         await self._session.commit()
-        await self._jobs.enqueue_account_sync(connection.id)
-        log.info("consent_granted", user_id=str(binding.user_id), connection_id=str(connection.id))
+        await self._jobs.enqueue_sync(connection.id)
+        if superseded_consent_id and superseded_consent_id != consent.consent_id:
+            await self._jobs.enqueue_revoke(connection.provider, superseded_consent_id)
+        log.info(
+            "consent_renewed" if binding.renew else "consent_granted",
+            user_id=str(binding.user_id),
+            connection_id=str(connection.id),
+        )
         return CallbackResult(CallbackOutcome.CONNECTED, connection.id)
+
+    async def start_renewal(self, user_id: uuid.UUID, connection_id: uuid.UUID) -> str:
+        """Start re-consent for an existing connection (BR-03).
+
+        Returns:
+            The bank authorisation URL.
+
+        Raises:
+            NotFoundError: No such connection for this user.
+            ConflictError: The connection can't be renewed.
+            ProviderUnavailableError: The provider failed.
+        """
+        connection = await self._owned(user_id, connection_id)
+        if connection.status not in _RENEWABLE:
+            raise ConflictError("This connection can't be renewed.")
+        state = await self._states.issue(StateBinding(user_id, connection.id, renew=True))
+        try:
+            consent = await self._provider.create_consent(
+                str(user_id), connection.institution_id, self._callback_url(state)
+            )
+        except ProviderError as exc:
+            log.warning("provider_error", operation="create_consent", error=str(exc))
+            raise ProviderUnavailableError("Could not contact the bank. Try again.") from exc
+        log.info("renewal_started", user_id=str(user_id), connection_id=str(connection.id))
+        return consent.authorisation_url
+
+    async def disconnect(self, user_id: uuid.UUID, connection_id: uuid.UUID) -> None:
+        """Revoke consent at the provider and delete the bank's data (BR-04).
+
+        Local data is deleted immediately even if the provider is unreachable; the
+        revocation is then retried in the background.
+
+        Raises:
+            NotFoundError: No such connection for this user.
+        """
+        connection = await self._owned(user_id, connection_id)
+        consent_id, provider = connection.provider_consent_id, connection.provider
+        if consent_id:
+            try:
+                await self._provider.revoke_consent(consent_id)
+            except ProviderError as exc:
+                log.warning("revoke_deferred", connection_id=str(connection_id), error=str(exc))
+                await self._jobs.enqueue_revoke(provider, consent_id)
+        await self._connections.delete(connection)  # accounts, balances, transactions cascade
+        await self._session.commit()
+        log.info("connection_deleted", user_id=str(user_id), connection_id=str(connection_id))
+
+    async def request_sync(self, user_id: uuid.UUID, connection_id: uuid.UUID) -> bool:
+        """Queue a manual sync.
+
+        Returns:
+            True if queued; False if one is already queued for this minute.
+
+        Raises:
+            NotFoundError: No such connection for this user.
+            ConflictError: The connection isn't active (e.g. needs renewal).
+        """
+        connection = await self._owned(user_id, connection_id)
+        if connection.status is not ConnectionStatus.ACTIVE:
+            raise ConflictError("Renew this connection before syncing.")
+        return await self._jobs.enqueue_sync(connection.id)
+
+    async def _owned(self, user_id: uuid.UUID, connection_id: uuid.UUID) -> BankConnection:
+        """The user's connection, or 404 (never reveal other users' connections)."""
+        connection = await self._connections.get_for_user(connection_id, user_id)
+        if connection is None or connection.status is ConnectionStatus.PENDING:
+            raise NotFoundError("Connection not found.")
+        return connection
+
+    def _callback_url(self, state: str) -> str:
+        return (
+            f"{self._settings.public_api_url.rstrip('/')}/api/v1/connections/callback?"
+            + urlencode({"state": state})
+        )
 
     async def list_connections(self, user_id: uuid.UUID) -> Sequence[BankConnection]:
         """The user's bank connections."""

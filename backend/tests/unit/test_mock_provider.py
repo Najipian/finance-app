@@ -58,3 +58,43 @@ async def test_bad_tokens_are_rejected() -> None:
         await provider.complete_consent({"one-time-token": "forged"})
     with pytest.raises(ProviderAuthError):
         await provider.get_accounts("mock-consent.unknown-bank.x")
+
+
+async def test_mock_transactions_are_deterministic_with_recent_ones_pending_br06() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    consent = await provider.complete_consent(
+        {"one-time-token": MockProvider.one_time_token("mock-bank-uk")}
+    )
+    token = consent.consent_token.get_secret_value()
+    today = datetime.now(UTC).date()
+
+    first = await provider.get_transactions(
+        token, "acc-uk-current", today - timedelta(days=40), today
+    )
+    again = await provider.get_transactions(
+        token, "acc-uk-current", today - timedelta(days=40), today
+    )
+
+    assert first == again
+    assert any(t.description == "ACME LTD SALARY" and t.amount > 0 for t in first)
+    for tx in first:
+        recent = tx.booking_date > today - timedelta(days=2)
+        assert tx.status == ("pending" if recent else "booked")
+        assert (tx.provider_transaction_id or "").startswith("p-" if recent else "b-")
+
+
+async def test_savings_only_moves_on_the_first() -> None:
+    from datetime import date
+
+    consent = await provider.complete_consent(
+        {"one-time-token": MockProvider.one_time_token("mock-bank-uk")}
+    )
+    token = consent.consent_token.get_secret_value()
+
+    txs = await provider.get_transactions(
+        token, "acc-uk-savings", date(2026, 1, 1), date(2026, 3, 31)
+    )
+
+    assert [t.booking_date.day for t in txs] == [1, 1, 1]
+    await provider.revoke_consent(consent.consent_id or "x")

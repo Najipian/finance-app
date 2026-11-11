@@ -6,9 +6,9 @@ services. Amounts are ``Decimal``; account numbers arrive already masked.
 """
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, SecretStr
 
@@ -59,6 +59,22 @@ class ProviderBalance(_Frozen):
     as_of: datetime
 
 
+class ProviderTransaction(_Frozen):
+    """A transaction as reported by the provider. Debits are negative.
+
+    ``provider_transaction_id`` is optional because some banks omit it, and a pending
+    transaction often gets a new ID when it books.
+    """
+
+    provider_transaction_id: str | None
+    booking_date: date
+    amount: Decimal
+    currency: str
+    description: str
+    merchant: str | None = None
+    status: Literal["booked", "pending"]
+
+
 class ProviderError(Exception):
     """The provider failed or returned something we can't use (retryable later)."""
 
@@ -105,6 +121,16 @@ class BankProvider(Protocol):
 
     async def get_balances(self, consent_token: str, account_id: str) -> list[ProviderBalance]:
         """Current balances of one account."""
+        ...
+
+    async def get_transactions(
+        self, consent_token: str, account_id: str, date_from: date, date_to: date
+    ) -> list[ProviderTransaction]:
+        """Booked and pending transactions between two dates (inclusive)."""
+        ...
+
+    async def revoke_consent(self, consent_id: str) -> None:
+        """Revoke the consent at the provider (and the bank). Idempotent."""
         ...
 
 

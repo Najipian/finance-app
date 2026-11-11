@@ -12,7 +12,7 @@ through float). Errors never include response bodies, which hold personal data.
 
 import json
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any
 from urllib.parse import quote
@@ -36,12 +36,14 @@ from finance_app.providers.base import (
     ProviderAuthError,
     ProviderBalance,
     ProviderError,
+    ProviderTransaction,
     mask_account_number,
 )
 
 ONE_TIME_TOKEN_PARAM = "one-time-token"  # noqa: S105 - a query parameter name
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 _MASKABLE_IDENTIFIERS = ("IBAN", "ACCOUNT_NUMBER", "BBAN")
+TRANSACTIONS_PAGE_SIZE = 1000  # Yapily maximum
 
 
 class _RetryableError(ProviderError):
@@ -107,10 +109,14 @@ class YapilyProvider:
         *,
         consent: str | None = None,
         body: dict[str, Any] | None = None,
-    ) -> Any:
+        params: dict[str, str | int] | None = None,
+    ) -> dict[str, Any]:
+        """Send one request and return the whole response document (``data``, ``meta``)."""
         headers = {"consent": consent} if consent else None
         try:
-            response = await self._client.request(method, path, headers=headers, json=body)
+            response = await self._client.request(
+                method, path, headers=headers, json=body, params=params
+            )
         except httpx.TransportError as exc:
             raise _RetryableError(f"yapily {method} {path}: {type(exc).__name__}") from exc
         status = response.status_code
@@ -121,12 +127,22 @@ class YapilyProvider:
         if status >= 400:
             raise ProviderError(f"yapily {method} {path} -> {status}")
         try:
-            return json.loads(response.content, parse_float=Decimal)["data"]
-        except (ValueError, KeyError, TypeError) as exc:
+            document = json.loads(response.content, parse_float=Decimal)
+        except ValueError as exc:
             raise ProviderError(f"yapily {method} {path}: unexpected response") from exc
+        if not isinstance(document, dict) or "data" not in document:
+            raise ProviderError(f"yapily {method} {path}: unexpected response")
+        return document
 
-    async def _get(self, path: str, *, consent: str | None = None) -> Any:
-        """GET with retries on transient failures (GETs are idempotent)."""
+    async def _with_retries(
+        self,
+        method: str,
+        path: str,
+        *,
+        consent: str | None = None,
+        params: dict[str, str | int] | None = None,
+    ) -> dict[str, Any]:
+        """Idempotent request (GET, DELETE) with retries on transient failures."""
         retrying = AsyncRetrying(
             stop=stop_after_attempt(self._retry_attempts),
             wait=wait_exponential(multiplier=self._retry_wait, max=8),
@@ -135,13 +151,17 @@ class YapilyProvider:
         )
         async for attempt in retrying:
             with attempt:
-                return await self._send("GET", path, consent=consent)
+                return await self._send(method, path, consent=consent, params=params)
         raise ProviderError("unreachable")  # pragma: no cover
 
+    async def _get(self, path: str, *, consent: str | None = None) -> Any:
+        """GET with retries; returns the ``data`` member."""
+        return (await self._with_retries("GET", path, consent=consent))["data"]
+
     async def _post(self, path: str, body: dict[str, Any]) -> Any:
-        """POST without retries: creating consents is not idempotent."""
+        """POST without retries (creating consents is not idempotent); returns ``data``."""
         try:
-            return await self._send("POST", path, body=body)
+            return (await self._send("POST", path, body=body))["data"]
         except _RetryableError as exc:
             raise ProviderError(str(exc)) from exc
 
@@ -255,3 +275,72 @@ class YapilyProvider:
                 )
             )
         return balances
+
+    async def get_transactions(
+        self, consent_token: str, account_id: str, date_from: date, date_to: date
+    ) -> list[ProviderTransaction]:
+        """Transactions booked or pending between two dates (inclusive), all pages."""
+        path = f"/accounts/{quote(account_id, safe='')}/transactions"
+        params: dict[str, str | int] = {
+            "from": _yapily_datetime(datetime.combine(date_from, time.min, UTC)),
+            "before": _yapily_datetime(datetime.combine(date_to, time.max, UTC)),
+            "limit": TRANSACTIONS_PAGE_SIZE,
+            "sort": "date",
+        }
+        transactions: list[ProviderTransaction] = []
+        offset = 0
+        while True:
+            document = await self._with_retries(
+                "GET", path, consent=consent_token, params={**params, "offset": offset}
+            )
+            page = document["data"]
+            transactions.extend(_to_transaction(item) for item in page)
+            total = document.get("meta", {}).get("pagination", {}).get("totalCount")
+            offset += len(page)
+            if (
+                not page
+                or len(page) < TRANSACTIONS_PAGE_SIZE
+                or (total is not None and offset >= total)
+            ):
+                return transactions
+
+    async def revoke_consent(self, consent_id: str) -> None:
+        """Delete the consent at Yapily (and at the bank). Idempotent, so retried."""
+        document = await self._with_retries("DELETE", f"/consents/{quote(consent_id, safe='')}")
+        if document["data"].get("deleteStatus") not in (None, "SUCCESS"):
+            raise ProviderError("yapily consent deletion failed")
+
+
+def _yapily_datetime(value: datetime) -> str:
+    """Format as Yapily expects: ``yyyy-MM-dd'T'HH:mm:ss.SSSZ`` in UTC."""
+    return (
+        value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.") + f"{value.microsecond // 1000:03d}Z"
+    )
+
+
+def _to_transaction(item: dict[str, Any]) -> ProviderTransaction:
+    """Map one Yapily transaction to the provider-neutral DTO."""
+    amount = item.get("transactionAmount") or {
+        "amount": item.get("amount"),
+        "currency": item.get("currency"),
+    }
+    booked_at = _parse_datetime(item.get("bookingDateTime") or item.get("date"))
+    if booked_at is None or amount.get("amount") is None:
+        raise ProviderError("transaction without date or amount")
+    merchant = (item.get("merchant") or {}).get("merchantName")
+    description = (
+        item.get("description")
+        or " ".join(item.get("transactionInformation") or [])
+        or item.get("reference")
+        or merchant
+        or ""
+    )
+    return ProviderTransaction(
+        provider_transaction_id=item.get("id") or None,
+        booking_date=booked_at.date(),
+        amount=Decimal(amount["amount"]),
+        currency=amount.get("currency") or item.get("currency") or "XXX",
+        description=description.strip()[:500],
+        merchant=merchant,
+        status="pending" if item.get("status") == "PENDING" else "booked",
+    )

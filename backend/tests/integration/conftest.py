@@ -24,9 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from finance_app.core.config import Environment, Settings
 from finance_app.db.session import create_engine, create_sessionmaker
 from finance_app.main import create_app
+from finance_app.worker.settings import revoke_consent, sync_connection
 from finance_app.worker.settings import shutdown as worker_shutdown
 from finance_app.worker.settings import startup as worker_startup
-from finance_app.worker.settings import sync_accounts
 
 # On Windows with Docker Desktop, testcontainers can read the Ryuk reaper's port
 # mapping before Docker publishes it ("Port mapping ... 8080 is not available").
@@ -109,7 +109,7 @@ async def db(migrated_settings: Settings) -> AsyncIterator[AsyncSession]:
 async def run_worker_burst(settings: Settings) -> None:
     """Run a real arq worker until the queue is empty, then stop."""
     worker = Worker(
-        functions=[sync_accounts],
+        functions=[sync_connection, revoke_consent],
         redis_settings=RedisSettings.from_dsn(settings.redis_url),
         burst=True,
         on_startup=worker_startup,

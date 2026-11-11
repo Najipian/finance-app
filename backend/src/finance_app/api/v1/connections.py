@@ -1,24 +1,30 @@
 """Institutions and bank connection endpoints (BR-02)."""
 
+import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
-from finance_app.api.deps import ConnectionServiceDep, CurrentUser
+from finance_app.api.deps import ConnectionServiceDep, CurrentUser, RateLimiterDep
 from finance_app.core.errors import problem
+from finance_app.core.rate_limit import RateLimit
 from finance_app.modules.connections.schemas import (
-    ConnectionRead,
+    ConnectionDetail,
     ConnectionStarted,
     InstitutionRead,
     StartConnectionRequest,
+    SyncQueued,
 )
 
 router = APIRouter(tags=["connections"])
 
 _UNAUTHORIZED = problem("Missing, invalid or expired token.")
 _PROVIDER_DOWN = problem("The Open Banking provider is unavailable; try again later.")
+_NOT_FOUND = problem("No such connection.")
 _MAX_CALLBACK_PARAM_LENGTH = 4096
+SYNC_RATE_LIMIT = RateLimit(requests=5, window_seconds=60)  # per user
 
 
 @router.get(
@@ -68,15 +74,86 @@ async def start_connection(
 @router.get(
     "/connections",
     summary="List connections",
-    description="The user's connected banks and their status.",
-    response_model=list[ConnectionRead],
+    description=(
+        "The user's connected banks with status, consent expiry, `renewal_due` (expires "
+        "within 7 days: show a renew banner) and the outcome of the last sync."
+    ),
+    response_model=list[ConnectionDetail],
     responses={status.HTTP_401_UNAUTHORIZED: _UNAUTHORIZED},
 )
 async def list_connections(
     user: CurrentUser, service: ConnectionServiceDep
-) -> list[ConnectionRead]:
+) -> list[ConnectionDetail]:
     """List the user's bank connections."""
-    return [ConnectionRead.model_validate(c) for c in await service.list_connections(user.id)]
+    now = datetime.now(UTC)
+    return [ConnectionDetail.from_model(c, now) for c in await service.list_connections(user.id)]
+
+
+@router.post(
+    "/connections/{connection_id}/renew",
+    summary="Renew consent",
+    description=(
+        "Starts re-consent at the bank for an existing connection (BR-03). Send the "
+        "browser to `authorisation_url`. Cancelling at the bank keeps the connection."
+    ),
+    response_model=ConnectionStarted,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: _UNAUTHORIZED,
+        status.HTTP_404_NOT_FOUND: _NOT_FOUND,
+        status.HTTP_409_CONFLICT: problem("The connection can't be renewed."),
+        status.HTTP_502_BAD_GATEWAY: _PROVIDER_DOWN,
+    },
+)
+async def renew_connection(
+    connection_id: uuid.UUID, user: CurrentUser, service: ConnectionServiceDep
+) -> ConnectionStarted:
+    """Start renewing a connection's consent."""
+    url = await service.start_renewal(user.id, connection_id)
+    return ConnectionStarted(connection_id=connection_id, authorisation_url=url)
+
+
+@router.delete(
+    "/connections/{connection_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Disconnect a bank",
+    description=(
+        "Revokes the consent at the provider and deletes the bank's accounts, balances "
+        "and transactions (BR-04). If the provider is unreachable, data is still deleted "
+        "now and the revocation is retried in the background."
+    ),
+    response_class=Response,
+    responses={status.HTTP_401_UNAUTHORIZED: _UNAUTHORIZED, status.HTTP_404_NOT_FOUND: _NOT_FOUND},
+)
+async def disconnect(
+    connection_id: uuid.UUID, user: CurrentUser, service: ConnectionServiceDep
+) -> Response:
+    """Disconnect a bank and delete its data."""
+    await service.disconnect(user.id, connection_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/connections/{connection_id}/sync",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Sync now",
+    description="Queues a background sync. Repeats within a minute are merged.",
+    response_model=SyncQueued,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: _UNAUTHORIZED,
+        status.HTTP_404_NOT_FOUND: _NOT_FOUND,
+        status.HTTP_409_CONFLICT: problem("The connection needs renewal first."),
+        status.HTTP_429_TOO_MANY_REQUESTS: problem("Too many sync requests."),
+    },
+)
+async def sync_connection(
+    connection_id: uuid.UUID,
+    user: CurrentUser,
+    service: ConnectionServiceDep,
+    limiter: RateLimiterDep,
+) -> SyncQueued:
+    """Queue a manual sync."""
+    await limiter.hit(f"sync:user:{user.id}", SYNC_RATE_LIMIT)
+    return SyncQueued(queued=await service.request_sync(user.id, connection_id))
 
 
 @router.get(
